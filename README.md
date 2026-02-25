@@ -28,6 +28,8 @@ Options:
 - `--http-mode`: force plain HTTP fetch mode (disables X auto browser mode)
 - `--session-profile-dir <path>`: browser profile dir for authenticated cookies
 - `--browser-channel <name>`: browser channel for login/fetch browser mode (`chrome`, `chromium`, `msedge`)
+- `--cookie-file <path>`: cookie file for fetch (`raw cookie header` or `Netscape cookie file`)
+- `--cookie-env <name>`: env var name that contains cookie header for fetch
 - `--timeout-ms <number>`: fetch timeout
 - `--overwrite`: overwrite existing target file
 - `--header <k:v>`: repeatable custom HTTP header
@@ -39,6 +41,15 @@ Login-specific options:
 Example:
 ```bash
 obfronter login x --session-profile-dir "$HOME/.obfronter/profiles/x" --browser-channel chrome
+```
+
+HTTP mode with cookies from env var:
+```bash
+export X_COOKIE='auth_token=...; ct0=...'
+obfronter fetch "https://x.com/<user>/status/<id>" \
+  --vault "/path/to/Vault" \
+  --http-mode \
+  --cookie-env X_COOKIE
 ```
 
 ## Architecture

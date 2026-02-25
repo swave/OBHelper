@@ -2,6 +2,7 @@
 
 import { parseArgs } from "node:util";
 
+import { resolveCookieHeader } from "./core/cookie-header.js";
 import { asError, ObfronterError } from "./core/errors.js";
 import type { BrowserChannel } from "./core/types.js";
 import { runFetchCommand } from "./index.js";
@@ -21,6 +22,8 @@ Options:
   --http-mode                   Force plain HTTP fetch mode (disables X default browser mode)
   --session-profile-dir <path>  Browser profile dir for authenticated cookies
   --browser-channel <name>      Browser channel for login/fetch browser mode (chrome|chromium|msedge)
+  --cookie-file <path>          Cookie file path (raw header or Netscape format) for fetch requests
+  --cookie-env <name>           Env var name containing cookie header for fetch requests
   --url <url>                   Login page URL for login command (default: https://x.com/login)
   --headless                    Run login browser in headless mode (default: false)
   --timeout-ms <number>         Timeout in milliseconds (fetch default: 20000, login default: 60000)
@@ -93,6 +96,8 @@ async function runFetchCli(args: string[]): Promise<void> {
       "http-mode": { type: "boolean", default: false },
       "session-profile-dir": { type: "string" },
       "browser-channel": { type: "string" },
+      "cookie-file": { type: "string" },
+      "cookie-env": { type: "string" },
       "timeout-ms": { type: "string" },
       overwrite: { type: "boolean", default: false },
       header: { type: "string", multiple: true },
@@ -124,6 +129,23 @@ async function runFetchCli(args: string[]): Promise<void> {
 
   const timeoutMs = parsePositiveNumber(parsed.values["timeout-ms"], "--timeout-ms must be a positive number.");
   const browserChannel = parseBrowserChannel(parsed.values["browser-channel"]);
+  const headers = parseHeaders(parsed.values.header) ?? {};
+  const existingCookieHeaderKey = Object.keys(headers).find((key) => key.toLowerCase() === "cookie");
+  if (existingCookieHeaderKey && (parsed.values["cookie-file"] || parsed.values["cookie-env"])) {
+    throw new ObfronterError(
+      "COOKIE_SOURCE_CONFLICT",
+      "Use either --header cookie:... or --cookie-file/--cookie-env, not both."
+    );
+  }
+
+  const cookieHeader = await resolveCookieHeader({
+    cookieFile: parsed.values["cookie-file"],
+    cookieEnvName: parsed.values["cookie-env"]
+  });
+  if (cookieHeader) {
+    headers.cookie = cookieHeader;
+  }
+  const finalHeaders = Object.keys(headers).length > 0 ? headers : undefined;
 
   const result = await runFetchCommand({
     url,
@@ -135,7 +157,7 @@ async function runFetchCli(args: string[]): Promise<void> {
     browserChannel,
     timeoutMs,
     overwrite: parsed.values.overwrite,
-    headers: parseHeaders(parsed.values.header)
+    headers: finalHeaders
   });
 
   process.stdout.write(
