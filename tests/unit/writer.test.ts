@@ -24,7 +24,11 @@ describe("ObsidianWriter", () => {
         fetchedAt: "2026-01-01T10:00:00.000Z",
         title: "My Test Note",
         markdownBody: "Hello markdown",
-        byline: "By Test"
+        byline: "By Test",
+        extractionStatus: "blocked",
+        authorHandle: "tester",
+        statusId: "123",
+        mediaUrls: ["https://example.com/image.jpg"]
       },
       {
         vaultPath,
@@ -37,6 +41,10 @@ describe("ObsidianWriter", () => {
     const fileContent = await readFile(first.outputPath, "utf8");
     expect(fileContent).toContain("source_platform: generic");
     expect(fileContent).toContain("Hello markdown");
+    expect(fileContent).toContain("extraction_status: blocked");
+    expect(fileContent).toContain('author_handle: "tester"');
+    expect(fileContent).toContain('status_id: "123"');
+    expect(fileContent).toContain('  - "https://example.com/image.jpg"');
 
     const second = await writer.write(
       {

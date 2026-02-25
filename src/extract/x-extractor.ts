@@ -8,6 +8,9 @@ const BLOCKED_PAGE_MARKERS = [
   "log in to x",
   "sign in to x",
   "rate limit exceeded",
+  "post is unavailable",
+  "this post is unavailable",
+  "account suspended",
   "something went wrong",
   "enable javascript"
 ];
@@ -35,22 +38,48 @@ function normalizeHandle(input: string | undefined): string | undefined {
   return normalized.length > 0 ? normalized : undefined;
 }
 
-function resolveStatusRef(document: Document, finalUrl: URL): { statusId?: string; authorHandle?: string } {
+function mergeStatusRefs(
+  base: { statusId?: string; authorHandle?: string },
+  incoming: { statusId?: string; authorHandle?: string }
+): { statusId?: string; authorHandle?: string } {
+  return {
+    statusId: base.statusId ?? incoming.statusId,
+    authorHandle: base.authorHandle ?? incoming.authorHandle
+  };
+}
+
+function resolveStatusRef(input: FetchResult, document: Document, finalUrl: URL): { statusId?: string; authorHandle?: string } {
+  let resolved: { statusId?: string; authorHandle?: string } = {};
+
   const fromFinalUrl = parseXStatusRef(finalUrl);
   if (fromFinalUrl) {
-    return fromFinalUrl;
+    resolved = mergeStatusRefs(resolved, fromFinalUrl);
+  }
+
+  try {
+    const requestedUrl = new URL(input.requestedUrl);
+    const fromRequestedUrl = parseXStatusRef(requestedUrl);
+    if (fromRequestedUrl) {
+      resolved = mergeStatusRefs(resolved, fromRequestedUrl);
+    }
+  } catch {
+    // Fall through to canonical parsing.
   }
 
   const canonicalHref = document.querySelector('link[rel="canonical"]')?.getAttribute("href");
   if (!canonicalHref) {
-    return {};
+    return resolved;
   }
 
   try {
     const canonicalUrl = new URL(canonicalHref, finalUrl);
-    return parseXStatusRef(canonicalUrl) ?? {};
+    const fromCanonicalUrl = parseXStatusRef(canonicalUrl);
+    if (fromCanonicalUrl) {
+      resolved = mergeStatusRefs(resolved, fromCanonicalUrl);
+    }
+    return resolved;
   } catch {
-    return {};
+    return resolved;
   }
 }
 
@@ -61,6 +90,78 @@ function findPrimaryArticle(document: Document): Element | null {
   }
 
   return document.querySelector("article");
+}
+
+function normalizeWhitespace(input: string): string {
+  return input.replace(/\s+/g, " ").trim();
+}
+
+function escapeHtml(input: string): string {
+  return input
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function hasBlockedMarker(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return BLOCKED_PAGE_MARKERS.some((marker) => normalized.includes(marker));
+}
+
+function extractTextFromLangNodes(article: Element | null): string | undefined {
+  if (!article) {
+    return undefined;
+  }
+
+  const chunks: string[] = [];
+  for (const node of article.querySelectorAll("[lang]")) {
+    const text = normalizeWhitespace(node.textContent ?? "");
+    if (text.length > 0) {
+      chunks.push(text);
+    }
+  }
+
+  const unique = [...new Set(chunks)];
+  if (unique.length === 0) {
+    return undefined;
+  }
+
+  return unique.join("\n");
+}
+
+function extractTweetContent(document: Document, article: Element | null): { text: string; html: string } | undefined {
+  const tweetNode = article?.querySelector('[data-testid="tweetText"]') ??
+    document.querySelector('article [data-testid="tweetText"]');
+  if (tweetNode) {
+    const text = normalizeWhitespace(tweetNode.textContent ?? "");
+    if (text.length > 0) {
+      return {
+        text,
+        html: tweetNode.innerHTML
+      };
+    }
+  }
+
+  const langNodeText = extractTextFromLangNodes(article);
+  if (langNodeText && !hasBlockedMarker(langNodeText)) {
+    return {
+      text: langNodeText,
+      html: `<p>${escapeHtml(langNodeText)}</p>`
+    };
+  }
+
+  const metaDescription = readMeta(document, "twitter:description") ?? readMeta(document, "og:description");
+  const cleanedMeta = metaDescription ? normalizeWhitespace(metaDescription) : "";
+  if (cleanedMeta.length > 0 && !hasBlockedMarker(cleanedMeta)) {
+    return {
+      text: cleanedMeta,
+      html: `<p>${escapeHtml(cleanedMeta)}</p>`
+    };
+  }
+
+  return undefined;
 }
 
 function collectMediaUrls(document: Document, article: Element | null, pageUrl: URL): string[] {
@@ -122,6 +223,14 @@ function detectBlockedReason(document: Document): string {
     return "X rate limit exceeded for this request.";
   }
 
+  if (bodyText.includes("post is unavailable") || bodyText.includes("this post is unavailable")) {
+    return "This X post is unavailable.";
+  }
+
+  if (bodyText.includes("account suspended")) {
+    return "The X account appears to be suspended.";
+  }
+
   if (bodyText.includes("something went wrong")) {
     return "X returned an error page for this post.";
   }
@@ -166,12 +275,11 @@ export class XExtractor implements ContentExtractor {
     const dom = new JSDOM(input.html, { url: finalUrl.toString() });
     const { document } = dom.window;
 
-    const statusRef = resolveStatusRef(document, finalUrl);
+    const statusRef = resolveStatusRef(input, document, finalUrl);
     const authorHandle = normalizeHandle(statusRef.authorHandle);
     const article = findPrimaryArticle(document);
-    const tweetNode = article?.querySelector('[data-testid="tweetText"]') ??
-      document.querySelector('article [data-testid="tweetText"]');
-    const tweetText = tweetNode?.textContent?.trim() ?? "";
+    const tweetContent = extractTweetContent(document, article);
+    const tweetText = tweetContent?.text ?? "";
     const publishedAt = article?.querySelector("time")?.getAttribute("datetime") ??
       readMeta(document, "article:published_time");
     const mediaUrls = collectMediaUrls(document, article, finalUrl);
@@ -185,7 +293,7 @@ export class XExtractor implements ContentExtractor {
           statusId: statusRef.statusId,
           blocked: false
         }),
-        contentHtml: tweetNode?.innerHTML ?? `<p>${tweetText}</p>`,
+        contentHtml: tweetContent?.html ?? `<p>${escapeHtml(tweetText)}</p>`,
         byline: authorHandle ? `@${authorHandle}` : undefined,
         excerpt: tweetText.slice(0, 280),
         publishedAt: publishedAt ?? undefined,

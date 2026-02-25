@@ -52,4 +52,47 @@ describe("XExtractor", () => {
     expect(result.excerpt).toContain("Sign-in required");
     expect(result.contentHtml).toContain("Open source URL");
   });
+
+  it("extracts from i/web status URLs using canonical handle and lang nodes", async () => {
+    const fixturePath = path.join(process.cwd(), "tests/fixtures/x_status_iweb.html");
+    const html = await readFile(fixturePath, "utf8");
+
+    const extractor = new XExtractor();
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/i/web/status/555555",
+      finalUrl: "https://x.com/i/web/status/555555",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-02-26T01:24:00.000Z"
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.statusId).toBe("555555");
+    expect(result.authorHandle).toBe("fixtureuser");
+    expect(result.byline).toBe("@fixtureuser");
+    expect(result.publishedAt).toBe("2026-02-26T01:23:45.000Z");
+    expect(result.contentHtml).toContain("First line from lang node.");
+    expect(result.contentHtml).toContain("Second line from lang node.");
+    expect(result.mediaUrls).toEqual(["https://pbs.twimg.com/media/IWEB_OG.jpg"]);
+  });
+
+  it("maps rate-limit pages to blocked status with specific reason", async () => {
+    const fixturePath = path.join(process.cwd(), "tests/fixtures/x_rate_limited.html");
+    const html = await readFile(fixturePath, "utf8");
+
+    const extractor = new XExtractor();
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/someuser/status/777777",
+      finalUrl: "https://x.com/someuser/status/777777",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-02-26T01:25:00.000Z"
+    });
+
+    expect(result.extractionStatus).toBe("blocked");
+    expect(result.statusId).toBe("777777");
+    expect(result.authorHandle).toBe("someuser");
+    expect(result.excerpt).toBe("X rate limit exceeded for this request.");
+    expect(result.contentHtml).toContain("X rate limit exceeded for this request.");
+  });
 });
