@@ -6,6 +6,7 @@ export interface FetchOptions {
   timeoutMs?: number;
   sessionProfileDir?: string;
   browserChannel?: BrowserChannel;
+  cdpEndpoint?: string;
   headers?: Record<string, string>;
 }
 

@@ -22,6 +22,7 @@ Options:
   --http-mode                   Force plain HTTP fetch mode (disables X default browser mode)
   --session-profile-dir <path>  Browser profile dir for authenticated cookies
   --browser-channel <name>      Browser channel for login/fetch browser mode (chrome|chromium|msedge)
+  --cdp-endpoint <url>          Chrome DevTools endpoint for attaching to a running browser (or set OBFRONTER_CDP_ENDPOINT)
   --cookie-file <path>          Cookie file path (raw header or Netscape format) for fetch requests
   --cookie-env <name>           Env var name containing cookie header for fetch requests
   --url <url>                   Login page URL for login command (default: https://x.com/login)
@@ -96,6 +97,7 @@ async function runFetchCli(args: string[]): Promise<void> {
       "http-mode": { type: "boolean", default: false },
       "session-profile-dir": { type: "string" },
       "browser-channel": { type: "string" },
+      "cdp-endpoint": { type: "string" },
       "cookie-file": { type: "string" },
       "cookie-env": { type: "string" },
       "timeout-ms": { type: "string" },
@@ -112,6 +114,18 @@ async function runFetchCli(args: string[]): Promise<void> {
 
   if (parsed.values["browser-mode"] && parsed.values["http-mode"]) {
     throw new ObfronterError("INVALID_MODE", "Choose only one of --browser-mode or --http-mode.");
+  }
+
+  const cdpEndpoint = parsed.values["cdp-endpoint"]?.trim() || process.env.OBFRONTER_CDP_ENDPOINT?.trim() || undefined;
+  if (parsed.values["http-mode"] && cdpEndpoint) {
+    throw new ObfronterError("INVALID_MODE", "Choose only one of --http-mode or --cdp-endpoint.");
+  }
+
+  if (cdpEndpoint && parsed.values["session-profile-dir"]) {
+    throw new ObfronterError(
+      "INVALID_MODE",
+      "Choose one browser session source: --session-profile-dir or --cdp-endpoint."
+    );
   }
 
   const url = parsed.positionals[0];
@@ -155,6 +169,7 @@ async function runFetchCli(args: string[]): Promise<void> {
     forceHttpMode: parsed.values["http-mode"],
     sessionProfileDir: parsed.values["session-profile-dir"],
     browserChannel,
+    cdpEndpoint,
     timeoutMs,
     overwrite: parsed.values.overwrite,
     headers: finalHeaders

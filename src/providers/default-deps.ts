@@ -1,4 +1,5 @@
 import { BrowserFetcher } from "../fetch/browser-fetcher.js";
+import { CdpFetcher } from "../fetch/cdp-fetcher.js";
 import { HttpFetcher } from "../fetch/http-fetcher.js";
 import { GenericExtractor } from "../extract/generic-extractor.js";
 import { WeiboExtractor } from "../extract/weibo-extractor.js";
@@ -8,14 +9,20 @@ import { ObsidianWriter } from "../obsidian/writer.js";
 import { ExtractorRegistry } from "./extractor-registry.js";
 
 export function createDefaultDependencies(options: {
-  browserMode: boolean;
+  fetchMode: FetchMode;
 }): {
-  fetcher: BrowserFetcher | HttpFetcher;
+  fetcher: BrowserFetcher | HttpFetcher | CdpFetcher;
   extractors: ExtractorRegistry;
   writer: ObsidianWriter;
 } {
+  const fetcher = options.fetchMode === "browser"
+    ? new BrowserFetcher()
+    : options.fetchMode === "cdp"
+      ? new CdpFetcher()
+      : new HttpFetcher();
+
   return {
-    fetcher: options.browserMode ? new BrowserFetcher() : new HttpFetcher(),
+    fetcher,
     extractors: new ExtractorRegistry({
       x: new XExtractor(),
       weixin: new WeixinExtractor(),
@@ -25,3 +32,5 @@ export function createDefaultDependencies(options: {
     writer: new ObsidianWriter()
   };
 }
+
+export type FetchMode = "browser" | "http" | "cdp";

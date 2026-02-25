@@ -28,6 +28,7 @@ Options:
 - `--http-mode`: force plain HTTP fetch mode (disables X auto browser mode)
 - `--session-profile-dir <path>`: browser profile dir for authenticated cookies
 - `--browser-channel <name>`: browser channel for login/fetch browser mode (`chrome`, `chromium`, `msedge`)
+- `--cdp-endpoint <url>`: attach fetch to a running Chrome DevTools endpoint (or set `OBFRONTER_CDP_ENDPOINT`)
 - `--cookie-file <path>`: cookie file for fetch (`raw cookie header` or `Netscape cookie file`)
 - `--cookie-env <name>`: env var name that contains cookie header for fetch
 - `--timeout-ms <number>`: fetch timeout
@@ -50,6 +51,17 @@ obfronter fetch "https://x.com/<user>/status/<id>" \
   --vault "/path/to/Vault" \
   --http-mode \
   --cookie-env X_COOKIE
+```
+
+CDP mode (use your own Chrome session):
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.obfronter/chrome-cdp"
+
+obfronter fetch "https://x.com/<user>/status/<id>" \
+  --vault "/path/to/Vault" \
+  --cdp-endpoint "http://127.0.0.1:9222"
 ```
 
 ## Architecture
@@ -84,6 +96,7 @@ Some pages require login, anti-bot checks, or dynamic rendering. The scaffold in
 - Supports only X status URLs (`https://x.com/<handle>/status/<id>` or `/i/web/status/<id>`).
 - Defaults to browser mode for X and uses `chrome` browser channel by default.
 - If direct HTML extraction is blocked, it attempts a public oEmbed fallback before writing a blocked note.
+- You can attach fetch to a manually opened Chrome instance with `--cdp-endpoint`.
 - For link-only oEmbed posts (for example `t.co` only), it adds expanded destination links when resolvable.
 
 ## Weixin Provider (v1)

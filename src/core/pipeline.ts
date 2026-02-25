@@ -19,6 +19,7 @@ const pipelineInputSchema = z.object({
     timeoutMs: z.number().int().positive().optional(),
     sessionProfileDir: z.string().optional(),
     browserChannel: z.enum(["chrome", "chromium", "msedge"]).optional(),
+    cdpEndpoint: z.string().optional(),
     headers: z.record(z.string()).optional()
   })
 });
@@ -54,6 +55,7 @@ export async function runPipeline(
     timeoutMs: parsed.fetch.timeoutMs,
     sessionProfileDir: parsed.fetch.sessionProfileDir,
     browserChannel: parsed.fetch.browserChannel,
+    cdpEndpoint: parsed.fetch.cdpEndpoint,
     headers: parsed.fetch.headers
   });
 
