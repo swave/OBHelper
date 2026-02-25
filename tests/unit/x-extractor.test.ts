@@ -216,4 +216,99 @@ describe("XExtractor", () => {
     expect(result.contentHtml).toContain("Expanded body text from linked content.");
     expect(result.excerpt).toContain("Expanded");
   });
+
+  it("expands direct link-only tweet content into useful links", async () => {
+    const oEmbedFetch = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({})
+    }));
+    const extractor = new XExtractor(
+      oEmbedFetch,
+      async (url) => (url === "https://t.co/DotZ3V6XhJ" ? "https://example.com/expanded-article" : undefined),
+      async () => ({
+        ok: false,
+        status: 404,
+        url: "https://example.com/expanded-article",
+        text: async () => ""
+      })
+    );
+    const html = `
+      <html>
+        <head>
+          <meta property="og:title" content="Elvis on X" />
+        </head>
+        <body>
+          <article data-testid="tweet">
+            <div data-testid="tweetText">
+              <a href="https://t.co/DotZ3V6XhJ">https://t.co/DotZ3V6XhJ</a>
+            </div>
+            <time datetime="2026-02-23T10:00:00.000Z"></time>
+          </article>
+        </body>
+      </html>
+    `;
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/elvissun/status/2025920521871716562",
+      finalUrl: "https://x.com/elvissun/status/2025920521871716562",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-02-25T12:04:00.000Z"
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.excerpt).toContain("https://example.com/expanded-article");
+    expect(result.contentHtml).toContain("Expanded links:");
+    expect(result.contentHtml).toContain("https://example.com/expanded-article");
+    expect(oEmbedFetch).not.toHaveBeenCalled();
+  });
+
+  it("extracts linked page content for direct link-only tweets", async () => {
+    const oEmbedFetch = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({})
+    }));
+    const extractor = new XExtractor(
+      oEmbedFetch,
+      async (url) => (url === "https://t.co/DotZ3V6XhJ" ? "https://example.com/expanded-article" : undefined),
+      async () => ({
+        ok: true,
+        status: 200,
+        url: "https://example.com/expanded-article",
+        text: async () => "<html><head><title>Expanded Title</title></head><body><article><h1>Expanded Title</h1><p>Expanded body text from linked content.</p></article></body></html>"
+      })
+    );
+    const html = `
+      <html>
+        <head>
+          <meta property="og:title" content="Elvis on X" />
+        </head>
+        <body>
+          <article data-testid="tweet">
+            <div data-testid="tweetText">
+              <a href="https://t.co/DotZ3V6XhJ">https://t.co/DotZ3V6XhJ</a>
+            </div>
+            <time datetime="2026-02-23T10:00:00.000Z"></time>
+          </article>
+        </body>
+      </html>
+    `;
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/elvissun/status/2025920521871716562",
+      finalUrl: "https://x.com/elvissun/status/2025920521871716562",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-02-25T12:05:00.000Z"
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.title).toContain("Expanded Title");
+    expect(result.contentHtml).toContain("Linked content extracted from");
+    expect(result.contentHtml).toContain("Expanded body text from linked content.");
+    expect(result.excerpt).toContain("Expanded");
+    expect(oEmbedFetch).not.toHaveBeenCalled();
+  });
 });

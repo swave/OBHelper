@@ -403,6 +403,22 @@ function parseOEmbedContentHtml(html: string): { contentHtml: string; text: stri
   };
 }
 
+function collectLinksFromHtml(html: string): string[] {
+  const dom = new JSDOM(html);
+  return [...dom.window.document.querySelectorAll("a[href]")]
+    .map((link) => link.getAttribute("href")?.trim())
+    .filter((href): href is string => Boolean(href));
+}
+
+function collectLinksFromText(text: string): string[] {
+  const matches = text.match(/https?:\/\/\S+/g);
+  if (!matches) {
+    return [];
+  }
+
+  return matches.map((url) => url.replace(/[).,!?:;]+$/g, ""));
+}
+
 export class XExtractor implements ContentExtractor {
   public readonly id = "x";
   private readonly genericExtractor = new GenericExtractor();
@@ -571,6 +587,40 @@ export class XExtractor implements ContentExtractor {
     const fallbackTitle = readMeta(document, "og:title") ?? readMeta(document, "twitter:title");
 
     if (tweetText.length > 0) {
+      const rawLinks = [
+        ...collectLinksFromHtml(tweetContent?.html ?? ""),
+        ...collectLinksFromText(tweetText)
+      ];
+      const expandedLinks = [...new Set(await Promise.all(rawLinks.map((url) => this.expandUrl(url))))].filter(
+        (url): url is string => Boolean(url && !url.startsWith("https://t.co/"))
+      );
+      const linkOnly = isMostlyUrlText(tweetText) && expandedLinks.length > 0;
+
+      if (linkOnly) {
+        const linkedPageContent = await this.tryLinkedPageContent(expandedLinks);
+        if (linkedPageContent) {
+          return {
+            title: linkedPageContent.extracted.title,
+            contentHtml: [
+              `<p>Linked content extracted from <a href="${escapeHtml(linkedPageContent.sourceUrl)}">${escapeHtml(linkedPageContent.sourceUrl)}</a></p>`,
+              linkedPageContent.extracted.contentHtml
+            ].join(""),
+            byline: authorHandle ? `@${authorHandle}` : undefined,
+            excerpt: normalizeWhitespace(linkedPageContent.extracted.excerpt ?? linkedPageContent.extracted.title).slice(0, 280),
+            publishedAt: publishedAt ?? linkedPageContent.extracted.publishedAt,
+            extractionStatus: "ok",
+            authorHandle,
+            statusId: statusRef.statusId,
+            mediaUrls: [...new Set([...(mediaUrls || []), ...expandedLinks])]
+          };
+        }
+      }
+
+      const enrichedContentHtml = linkOnly
+        ? `${tweetContent?.html ?? `<p>${escapeHtml(tweetText)}</p>`}${renderExpandedLinksBlock(expandedLinks)}`
+        : tweetContent?.html ?? `<p>${escapeHtml(tweetText)}</p>`;
+      const excerpt = linkOnly ? expandedLinks.join(" ") : tweetText;
+
       return {
         title: buildTitle({
           fallbackTitle,
@@ -578,14 +628,16 @@ export class XExtractor implements ContentExtractor {
           statusId: statusRef.statusId,
           blocked: false
         }),
-        contentHtml: tweetContent?.html ?? `<p>${escapeHtml(tweetText)}</p>`,
+        contentHtml: enrichedContentHtml,
         byline: authorHandle ? `@${authorHandle}` : undefined,
-        excerpt: tweetText.slice(0, 280),
+        excerpt: excerpt.slice(0, 280),
         publishedAt: publishedAt ?? undefined,
         extractionStatus: "ok",
         authorHandle,
         statusId: statusRef.statusId,
-        mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined
+        mediaUrls: linkOnly
+          ? [...new Set([...(mediaUrls || []), ...expandedLinks])]
+          : (mediaUrls.length > 0 ? mediaUrls : undefined)
       };
     }
 

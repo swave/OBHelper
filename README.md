@@ -97,7 +97,7 @@ Some pages require login, anti-bot checks, or dynamic rendering. The scaffold in
 - Defaults to browser mode for X and uses `chrome` browser channel by default.
 - If direct HTML extraction is blocked, it attempts a public oEmbed fallback before writing a blocked note.
 - You can attach fetch to a manually opened Chrome instance with `--cdp-endpoint`.
-- For link-only oEmbed posts (for example `t.co` only), it adds expanded destination links when resolvable.
+- For link-only posts (for example `t.co` only), it adds expanded destination links when resolvable.
 
 ## Weixin Provider (v1)
 - Supports only article URLs shaped like `https://mp.weixin.qq.com/s?...` with article query identifiers.
