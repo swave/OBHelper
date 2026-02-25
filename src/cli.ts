@@ -4,12 +4,14 @@ import { parseArgs } from "node:util";
 
 import { asError, ObfronterError } from "./core/errors.js";
 import { runFetchCommand } from "./index.js";
+import { runXLoginCommand } from "./login/x-login.js";
 
 function printHelp(): void {
   const help = `obfronter - URL to Obsidian markdown pipeline
 
 Usage:
   obfronter fetch <url> --vault <path> [options]
+  obfronter login x --session-profile-dir <path> [options]
 
 Options:
   --vault <path>                Obsidian vault root path (or set OBSIDIAN_VAULT_PATH)
@@ -17,7 +19,9 @@ Options:
   --browser-mode                Force Playwright-backed browser fetch mode
   --http-mode                   Force plain HTTP fetch mode (disables X default browser mode)
   --session-profile-dir <path>  Browser profile dir for authenticated cookies
-  --timeout-ms <number>         Fetch timeout in milliseconds (default: 20000)
+  --url <url>                   Login page URL for login command (default: https://x.com/login)
+  --headless                    Run login browser in headless mode (default: false)
+  --timeout-ms <number>         Timeout in milliseconds (fetch default: 20000, login default: 60000)
   --overwrite                   Overwrite target file if it exists
   --header <k:v>                Optional request header (repeatable)
   --help                        Show help
@@ -48,20 +52,22 @@ function parseHeaders(input: string[] | undefined): Record<string, string> | und
   return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
-async function main(): Promise<void> {
-  const [command, ...rest] = process.argv.slice(2);
-
-  if (!command || command === "--help" || command === "help") {
-    printHelp();
-    return;
+function parsePositiveNumber(raw: string | undefined, errorMessage: string): number | undefined {
+  if (!raw) {
+    return undefined;
   }
 
-  if (command !== "fetch") {
-    throw new ObfronterError("INVALID_COMMAND", `Unknown command: ${command}`);
+  const parsedNumber = Number(raw);
+  if (!Number.isFinite(parsedNumber) || parsedNumber <= 0) {
+    throw new ObfronterError("INVALID_TIMEOUT", errorMessage);
   }
 
+  return parsedNumber;
+}
+
+async function runFetchCli(args: string[]): Promise<void> {
   const parsed = parseArgs({
-    args: rest,
+    args,
     allowPositionals: true,
     options: {
       vault: { type: "string" },
@@ -98,16 +104,7 @@ async function main(): Promise<void> {
     );
   }
 
-  const timeoutValue = parsed.values["timeout-ms"];
-  let timeoutMs: number | undefined;
-  if (timeoutValue) {
-    const parsedTimeout = Number(timeoutValue);
-    if (!Number.isFinite(parsedTimeout) || parsedTimeout <= 0) {
-      throw new ObfronterError("INVALID_TIMEOUT", "--timeout-ms must be a positive number.");
-    }
-
-    timeoutMs = parsedTimeout;
-  }
+  const timeoutMs = parsePositiveNumber(parsed.values["timeout-ms"], "--timeout-ms must be a positive number.");
 
   const result = await runFetchCommand({
     url,
@@ -128,6 +125,84 @@ async function main(): Promise<void> {
       `output_path=${result.saved.outputPath}`
     ].join("\n") + "\n"
   );
+}
+
+async function runLoginCli(args: string[]): Promise<void> {
+  const parsed = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      "session-profile-dir": { type: "string" },
+      url: { type: "string" },
+      headless: { type: "boolean", default: false },
+      "timeout-ms": { type: "string" },
+      help: { type: "boolean", default: false }
+    }
+  });
+
+  if (parsed.values.help) {
+    printHelp();
+    return;
+  }
+
+  const provider = parsed.positionals[0];
+  if (!provider) {
+    throw new ObfronterError("PROVIDER_REQUIRED", "Missing provider. Usage: obfronter login x --session-profile-dir <path>");
+  }
+
+  if (provider !== "x") {
+    throw new ObfronterError("LOGIN_PROVIDER_UNSUPPORTED", `Unsupported login provider: ${provider}`);
+  }
+
+  const sessionProfileDir = parsed.values["session-profile-dir"] ?? process.env.OBFRONTER_X_SESSION_DIR;
+  if (!sessionProfileDir) {
+    throw new ObfronterError(
+      "SESSION_PROFILE_DIR_REQUIRED",
+      "Missing --session-profile-dir (or OBFRONTER_X_SESSION_DIR environment variable)."
+    );
+  }
+
+  const timeoutMs = parsePositiveNumber(
+    parsed.values["timeout-ms"],
+    "--timeout-ms must be a positive number for login command."
+  );
+
+  const result = await runXLoginCommand({
+    sessionProfileDir,
+    loginUrl: parsed.values.url,
+    timeoutMs,
+    headless: parsed.values.headless
+  });
+
+  process.stdout.write(
+    [
+      "login_provider=x",
+      `session_profile_dir=${result.sessionProfileDir}`,
+      `login_url=${result.loginUrl}`,
+      "saved=true"
+    ].join("\n") + "\n"
+  );
+}
+
+async function main(): Promise<void> {
+  const [command, ...rest] = process.argv.slice(2);
+
+  if (!command || command === "--help" || command === "help") {
+    printHelp();
+    return;
+  }
+
+  if (command === "fetch") {
+    await runFetchCli(rest);
+    return;
+  }
+
+  if (command === "login") {
+    await runLoginCli(rest);
+    return;
+  }
+
+  throw new ObfronterError("INVALID_COMMAND", `Unknown command: ${command}`);
 }
 
 main().catch((error: unknown) => {

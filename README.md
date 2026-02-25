@@ -13,9 +13,13 @@ npm run build
 node dist/cli.js fetch "https://example.com/post" --vault "/path/to/ObsidianVault"
 ```
 
+`npm install` now auto-installs Playwright Chromium for local environments so `obfronter login x` works out of the box.
+To skip this (for CI or constrained environments), set `OBFRONTER_SKIP_PLAYWRIGHT_INSTALL=1`.
+
 ## CLI Usage
 ```bash
 obfronter fetch <url> --vault <path> [options]
+obfronter login x --session-profile-dir <path> [options]
 ```
 
 Options:
@@ -26,6 +30,15 @@ Options:
 - `--timeout-ms <number>`: fetch timeout
 - `--overwrite`: overwrite existing target file
 - `--header <k:v>`: repeatable custom HTTP header
+
+Login-specific options:
+- `--url <url>`: login URL (default: `https://x.com/login`)
+- `--headless`: run login browser in headless mode
+
+Example:
+```bash
+obfronter login x --session-profile-dir "$HOME/.obfronter/profiles/x"
+```
 
 ## Architecture
 Pipeline stages are explicit and swappable:
