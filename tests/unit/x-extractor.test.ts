@@ -142,4 +142,78 @@ describe("XExtractor", () => {
     expect(result.excerpt).toContain("Hello from oEmbed fallback tweet body");
     expect(result.contentHtml).toContain("Hello from oEmbed fallback tweet body");
   });
+
+  it("expands t.co-only oembed content into useful links", async () => {
+    const fixturePath = path.join(process.cwd(), "tests/fixtures/x_blocked.html");
+    const html = await readFile(fixturePath, "utf8");
+
+    const extractor = new XExtractor(
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          author_name: "Elvis",
+          html: "<blockquote><p><a href=\"https://t.co/DotZ3V6XhJ\">https://t.co/DotZ3V6XhJ</a></p>&mdash; Elvis</blockquote>"
+        })
+      }),
+      async (url) => (url === "https://t.co/DotZ3V6XhJ" ? "https://example.com/expanded-article" : undefined),
+      async () => ({
+        ok: false,
+        status: 404,
+        url: "https://example.com/expanded-article",
+        text: async () => ""
+      })
+    );
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/elvissun/status/2025920521871716562",
+      finalUrl: "https://x.com/elvissun/status/2025920521871716562",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-02-25T12:02:00.000Z"
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.excerpt).toContain("https://example.com/expanded-article");
+    expect(result.contentHtml).toContain("Expanded links:");
+    expect(result.contentHtml).toContain("https://example.com/expanded-article");
+    expect(result.contentHtml).not.toContain("&mdash; Elvis");
+  });
+
+  it("extracts linked page content when oembed is link-only", async () => {
+    const fixturePath = path.join(process.cwd(), "tests/fixtures/x_blocked.html");
+    const html = await readFile(fixturePath, "utf8");
+
+    const extractor = new XExtractor(
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          author_name: "Elvis",
+          html: "<blockquote><p><a href=\"https://t.co/DotZ3V6XhJ\">https://t.co/DotZ3V6XhJ</a></p></blockquote>"
+        })
+      }),
+      async (url) => (url === "https://t.co/DotZ3V6XhJ" ? "https://example.com/expanded-article" : undefined),
+      async () => ({
+        ok: true,
+        status: 200,
+        url: "https://example.com/expanded-article",
+        text: async () => "<html><head><title>Expanded Title</title></head><body><article><h1>Expanded Title</h1><p>Expanded body text from linked content.</p></article></body></html>"
+      })
+    );
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/elvissun/status/2025920521871716562",
+      finalUrl: "https://x.com/elvissun/status/2025920521871716562",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-02-25T12:03:00.000Z"
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.title).toContain("Expanded Title");
+    expect(result.contentHtml).toContain("Linked content extracted from");
+    expect(result.contentHtml).toContain("Expanded body text from linked content.");
+    expect(result.excerpt).toContain("Expanded");
+  });
 });

@@ -3,6 +3,7 @@ import { JSDOM } from "jsdom";
 import { parseXStatusRef } from "../core/url-source.js";
 import type { ExtractedMainContent, FetchResult } from "../core/types.js";
 import type { ContentExtractor } from "./extractor.js";
+import { GenericExtractor } from "./generic-extractor.js";
 
 const BLOCKED_PAGE_MARKERS = [
   "log in to x",
@@ -279,6 +280,15 @@ interface OEmbedResponseLike {
 }
 
 type OEmbedFetch = (url: string) => Promise<OEmbedResponseLike>;
+type UrlExpander = (url: string) => Promise<string | undefined>;
+type LinkedPageFetch = (url: string) => Promise<LinkedPageResponseLike>;
+
+interface LinkedPageResponseLike {
+  ok: boolean;
+  status: number;
+  url: string;
+  text: () => Promise<string>;
+}
 
 function defaultOEmbedFetch(url: string): Promise<OEmbedResponseLike> {
   return fetch(url, {
@@ -288,26 +298,170 @@ function defaultOEmbedFetch(url: string): Promise<OEmbedResponseLike> {
   });
 }
 
-function parseOEmbedContentHtml(html: string): { contentHtml: string; text: string } | undefined {
+async function defaultExpandUrl(url: string): Promise<string | undefined> {
+  const headers = {
+    "user-agent":
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+  };
+  const request = {
+    redirect: "follow" as const,
+    signal: AbortSignal.timeout(15_000),
+    headers
+  };
+
+  try {
+    const headResponse = await fetch(url, {
+      method: "HEAD",
+      ...request
+    });
+    if (headResponse.url) {
+      return headResponse.url;
+    }
+  } catch {
+    // Some endpoints reject HEAD; fallback to GET below.
+  }
+
+  try {
+    const getResponse = await fetch(url, {
+      method: "GET",
+      ...request
+    });
+    return getResponse.url || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function defaultLinkedPageFetch(url: string): Promise<LinkedPageResponseLike> {
+  return fetch(url, {
+    method: "GET",
+    redirect: "follow",
+    signal: AbortSignal.timeout(20_000),
+    headers: {
+      "user-agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+      "accept-language": "en-US,en;q=0.9"
+    }
+  });
+}
+
+function isMostlyUrlText(text: string): boolean {
+  const stripped = text
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[—–\-|:.,!?()"'`]/g, " ")
+    .replace(/\s+/g, "")
+    .trim();
+
+  return stripped.length === 0;
+}
+
+function renderExpandedLinksBlock(urls: string[]): string {
+  if (urls.length === 0) {
+    return "";
+  }
+
+  const items = urls.map((url) => `<li><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></li>`).join("");
+  return `<p>Expanded links:</p><ul>${items}</ul>`;
+}
+
+function isXLikeHost(inputUrl: string): boolean {
+  try {
+    const host = new URL(inputUrl).hostname.toLowerCase();
+    return host === "x.com" || host.endsWith(".x.com") ||
+      host === "twitter.com" || host.endsWith(".twitter.com") ||
+      host === "t.co";
+  } catch {
+    return false;
+  }
+}
+
+function parseOEmbedContentHtml(html: string): { contentHtml: string; text: string; links: string[] } | undefined {
   const dom = new JSDOM(html);
+  const paragraph = dom.window.document.querySelector("blockquote p");
   const blockquote = dom.window.document.querySelector("blockquote");
-  const fallbackNode = blockquote ?? dom.window.document.body;
-  const text = normalizeWhitespace(fallbackNode.textContent ?? "");
+  const contentNode = paragraph ?? blockquote ?? dom.window.document.body;
+  const text = normalizeWhitespace(contentNode.textContent ?? "");
 
   if (!text || hasBlockedMarker(text)) {
     return undefined;
   }
 
+  const links = [...contentNode.querySelectorAll("a[href]")]
+    .map((link) => link.getAttribute("href")?.trim())
+    .filter((href): href is string => Boolean(href));
+
   return {
-    contentHtml: blockquote ? blockquote.innerHTML : `<p>${escapeHtml(text)}</p>`,
-    text
+    contentHtml: paragraph
+      ? `<p>${paragraph.innerHTML}</p>`
+      : blockquote
+        ? blockquote.innerHTML
+        : `<p>${escapeHtml(text)}</p>`,
+    text,
+    links
   };
 }
 
 export class XExtractor implements ContentExtractor {
   public readonly id = "x";
+  private readonly genericExtractor = new GenericExtractor();
 
-  public constructor(private readonly oEmbedFetch: OEmbedFetch = defaultOEmbedFetch) {}
+  public constructor(
+    private readonly oEmbedFetch: OEmbedFetch = defaultOEmbedFetch,
+    private readonly expandUrl: UrlExpander = defaultExpandUrl,
+    private readonly linkedPageFetch: LinkedPageFetch = defaultLinkedPageFetch
+  ) {}
+
+  private async tryLinkedPageContent(expandedLinks: string[]): Promise<{
+    sourceUrl: string;
+    extracted: ExtractedMainContent;
+  } | undefined> {
+    for (const link of expandedLinks.slice(0, 3)) {
+      if (isXLikeHost(link)) {
+        continue;
+      }
+
+      let response: LinkedPageResponseLike;
+      try {
+        response = await this.linkedPageFetch(link);
+      } catch {
+        continue;
+      }
+
+      if (!response.ok) {
+        continue;
+      }
+
+      let html: string;
+      try {
+        html = await response.text();
+      } catch {
+        continue;
+      }
+
+      try {
+        const extracted = await this.genericExtractor.extract({
+          requestedUrl: link,
+          finalUrl: response.url || link,
+          html,
+          statusCode: response.status,
+          fetchedAt: new Date().toISOString()
+        });
+
+        if (normalizeWhitespace(extracted.excerpt ?? "").length > 20 || normalizeWhitespace(extracted.title).length > 0) {
+          return {
+            sourceUrl: response.url || link,
+            extracted
+          };
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return undefined;
+  }
 
   private async tryOEmbedFallback(input: {
     statusUrl: string;
@@ -358,11 +512,41 @@ export class XExtractor implements ContentExtractor {
       blocked: false
     });
 
+    const expandedLinks = [...new Set(await Promise.all(parsed.links.map((url) => this.expandUrl(url))))].filter(
+      (url): url is string => Boolean(url && !url.startsWith("https://t.co/"))
+    );
+    const linkOnly = isMostlyUrlText(parsed.text) && expandedLinks.length > 0;
+
+    if (linkOnly) {
+      const linkedPageContent = await this.tryLinkedPageContent(expandedLinks);
+      if (linkedPageContent) {
+        return {
+          title: linkedPageContent.extracted.title,
+          contentHtml: [
+            `<p>Linked content extracted from <a href="${escapeHtml(linkedPageContent.sourceUrl)}">${escapeHtml(linkedPageContent.sourceUrl)}</a></p>`,
+            linkedPageContent.extracted.contentHtml
+          ].join(""),
+          byline: input.authorHandle ? `@${input.authorHandle}` : (oEmbedAuthor || undefined),
+          excerpt: normalizeWhitespace(linkedPageContent.extracted.excerpt ?? linkedPageContent.extracted.title).slice(0, 280),
+          publishedAt: input.publishedAt ?? linkedPageContent.extracted.publishedAt,
+          extractionStatus: "ok",
+          authorHandle: input.authorHandle,
+          statusId: input.statusRef.statusId,
+          mediaUrls: [...new Set([...(input.mediaUrls || []), ...expandedLinks])]
+        };
+      }
+    }
+
+    const enrichedContentHtml = linkOnly
+      ? `${parsed.contentHtml}${renderExpandedLinksBlock(expandedLinks)}`
+      : parsed.contentHtml;
+    const excerpt = linkOnly ? expandedLinks.join(" ") : parsed.text;
+
     return {
       title,
-      contentHtml: parsed.contentHtml,
+      contentHtml: enrichedContentHtml,
       byline: input.authorHandle ? `@${input.authorHandle}` : (oEmbedAuthor || undefined),
-      excerpt: parsed.text.slice(0, 280),
+      excerpt: excerpt.slice(0, 280),
       publishedAt: input.publishedAt,
       extractionStatus: "ok",
       authorHandle: input.authorHandle,
