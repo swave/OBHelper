@@ -20,9 +20,11 @@ describe("CdpFetcher", () => {
     const content = vi.fn(async () => "<html><body>ok</body></html>");
     const pageUrl = vi.fn(() => "https://x.com/test/status/1");
     const closePage = vi.fn(async () => undefined);
+    const waitForSelector = vi.fn(async () => undefined);
 
     const newPage = vi.fn(async () => ({
       goto,
+      waitForSelector,
       content,
       url: pageUrl,
       close: closePage
@@ -51,6 +53,13 @@ describe("CdpFetcher", () => {
       timeout: 12_345,
       waitUntil: "domcontentloaded"
     });
+    expect(waitForSelector).toHaveBeenCalledWith(
+      'article [data-testid="tweetText"], article time, article [lang]',
+      {
+        state: "attached",
+        timeout: 8_000
+      }
+    );
     expect(closePage).toHaveBeenCalledTimes(1);
     expect(closeBrowser).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
@@ -90,8 +99,10 @@ describe("CdpFetcher", () => {
     const content = vi.fn(async () => "<html><body>ok</body></html>");
     const pageUrl = vi.fn(() => "https://x.com/test/status/1");
     const closePage = vi.fn(async () => undefined);
+    const waitForSelector = vi.fn(async () => undefined);
     const newPage = vi.fn(async () => ({
       goto,
+      waitForSelector,
       content,
       url: pageUrl,
       close: closePage
@@ -125,6 +136,7 @@ describe("CdpFetcher", () => {
     expect(fetchCdpVersion).toHaveBeenCalledWith("http://127.0.0.1:9222", 12_345);
     expect(connectOverCDP).toHaveBeenNthCalledWith(1, "http://127.0.0.1:9222");
     expect(connectOverCDP).toHaveBeenNthCalledWith(2, "ws://127.0.0.1:9222/devtools/browser/mock-id");
+    expect(waitForSelector).toHaveBeenCalledTimes(1);
     expect(result.statusCode).toBe(200);
     expect(closeBrowser).toHaveBeenCalledTimes(1);
   });

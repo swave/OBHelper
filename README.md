@@ -89,6 +89,22 @@ npm run verify
 ```
 This runs lint, typecheck, and coverage-enabled unit tests.
 
+## X E2E (CDP)
+You can run a real-browser E2E check for X extraction via CDP:
+
+```bash
+export X_E2E_URL_TEXT="https://x.com/<user>/status/<id>"
+export X_E2E_EXPECT_TEXT="a short phrase expected in markdown"
+export OBFRONTER_CDP_ENDPOINT="http://127.0.0.1:9222"
+npm run test:e2e:x
+```
+
+Optional link-only case:
+- `X_E2E_URL_LINK_ONLY`: a link-only X status URL
+- `X_E2E_EXPECT_LINK`: expected destination host/phrase in markdown (optional; defaults to checking `Expanded links`)
+- `E2E_VAULT_DIR`: custom output vault path (default: temporary directory)
+- `X_E2E_TIMEOUT_MS`: fetch timeout in milliseconds (default: `90000`)
+
 ## Notes on Access Restrictions
 Some pages require login, anti-bot checks, or dynamic rendering. The scaffold includes browser-session mode as a compliant extension point; no CAPTCHA bypass logic is included.
 

@@ -1,6 +1,7 @@
 import { ObfronterError } from "../core/errors.js";
 import type { BrowserChannel, FetchOptions, FetchResult } from "../core/types.js";
 import type { Fetcher } from "./fetcher.js";
+import { waitForXStatusContentReady } from "./x-ready.js";
 
 interface PlaywrightLike {
   chromium: {
@@ -13,6 +14,10 @@ interface PlaywrightLike {
           url: string,
           options: { timeout: number; waitUntil: "domcontentloaded" | "networkidle" }
         ) => Promise<{ status: () => number } | null>;
+        waitForSelector: (
+          selector: string,
+          options: { state: "attached"; timeout: number }
+        ) => Promise<unknown>;
         content: () => Promise<string>;
         url: () => string;
       }>;
@@ -64,6 +69,11 @@ export class BrowserFetcher implements Fetcher {
       const response = await page.goto(options.url, {
         timeout: timeoutMs,
         waitUntil: "domcontentloaded"
+      });
+      await waitForXStatusContentReady({
+        page,
+        requestedUrl: options.url,
+        timeoutMs
       });
 
       return {
