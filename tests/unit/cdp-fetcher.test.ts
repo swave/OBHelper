@@ -49,7 +49,7 @@ describe("CdpFetcher", () => {
     expect(connectOverCDP).toHaveBeenCalledWith("http://127.0.0.1:9222");
     expect(goto).toHaveBeenCalledWith("https://x.com/test/status/1", {
       timeout: 12_345,
-      waitUntil: "networkidle"
+      waitUntil: "domcontentloaded"
     });
     expect(closePage).toHaveBeenCalledTimes(1);
     expect(closeBrowser).toHaveBeenCalledTimes(1);

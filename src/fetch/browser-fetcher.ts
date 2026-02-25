@@ -11,7 +11,7 @@ interface PlaywrightLike {
       newPage: () => Promise<{
         goto: (
           url: string,
-          options: { timeout: number; waitUntil: "networkidle" }
+          options: { timeout: number; waitUntil: "domcontentloaded" | "networkidle" }
         ) => Promise<{ status: () => number } | null>;
         content: () => Promise<string>;
         url: () => string;
@@ -63,7 +63,7 @@ export class BrowserFetcher implements Fetcher {
       const page = await context.newPage();
       const response = await page.goto(options.url, {
         timeout: timeoutMs,
-        waitUntil: "networkidle"
+        waitUntil: "domcontentloaded"
       });
 
       return {

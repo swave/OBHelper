@@ -5,7 +5,7 @@ import type { Fetcher } from "./fetcher.js";
 interface CdpPageLike {
   goto: (
     url: string,
-    options: { timeout: number; waitUntil: "networkidle" }
+    options: { timeout: number; waitUntil: "domcontentloaded" | "networkidle" }
   ) => Promise<{ status: () => number } | null>;
   content: () => Promise<string>;
   url: () => string;
@@ -161,7 +161,7 @@ export class CdpFetcher implements Fetcher {
       try {
         const response = await page.goto(options.url, {
           timeout: timeoutMs,
-          waitUntil: "networkidle"
+          waitUntil: "domcontentloaded"
         });
 
         return {
