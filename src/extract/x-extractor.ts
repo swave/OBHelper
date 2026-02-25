@@ -408,17 +408,71 @@ const X_SNAPSHOT_NOISE_LINES = new Set([
   "profile",
   "more",
   "post",
+  "follow",
+  "following",
+  "want to publish your own article?",
+  "upgrade to premium",
+  "to view keyboard shortcuts, press question mark",
+  "view keyboard shortcuts",
   "log in",
   "sign up"
 ]);
 
-function cleanLinkedTextSnapshot(raw: string): string {
+const CODE_LANG_ALIASES: Record<string, string> = {
+  bash: "bash",
+  sh: "bash",
+  shell: "bash",
+  zsh: "bash",
+  json: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  javascript: "javascript",
+  js: "javascript",
+  typescript: "typescript",
+  ts: "typescript",
+  python: "python",
+  py: "python",
+  diff: "diff"
+};
+
+function isLikelyMetricLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (/^\d+(?:\.\d+)?[kmb]?$/i.test(trimmed)) {
+    return true;
+  }
+
+  return /^follow(?:\s+\d+(?:\.\d+)?[kmb]?)+$/i.test(trimmed);
+}
+
+function shouldDropSnapshotLine(line: string): boolean {
+  const normalized = line.toLowerCase();
+  if (X_SNAPSHOT_NOISE_LINES.has(normalized)) {
+    return true;
+  }
+
+  if (isLikelyMetricLine(line)) {
+    return true;
+  }
+
+  if (/^@[a-z0-9_]{1,20}$/i.test(line)) {
+    return true;
+  }
+
+  if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{1,2}(?:,\s+\d{4})?$/i.test(line)) {
+    return true;
+  }
+
+  return line === "·" || line === "•";
+}
+
+function cleanLinkedTextSnapshot(raw: string): string[] {
   const lines = raw
     .replace(/\r/g, "")
     .split("\n")
     .map((line) => normalizeWhitespace(line))
     .filter((line) => line.length > 0)
-    .filter((line) => !X_SNAPSHOT_NOISE_LINES.has(line.toLowerCase()));
+    .filter((line) => !shouldDropSnapshotLine(line));
 
   const deduped: string[] = [];
   for (const line of lines) {
@@ -428,7 +482,7 @@ function cleanLinkedTextSnapshot(raw: string): string {
     deduped.push(line);
   }
 
-  return deduped.join("\n\n");
+  return deduped;
 }
 
 function cleanLinkedTitle(rawTitle: string | undefined): string | undefined {
@@ -448,13 +502,147 @@ function cleanLinkedTitle(rawTitle: string | undefined): string | undefined {
   return cleaned;
 }
 
-function renderTextParagraphs(text: string): string {
-  const blocks = text
-    .split(/\n{2,}/)
-    .map((block) => normalizeWhitespace(block))
-    .filter((block) => block.length > 0);
+function parseCodeLanguage(line: string): string | undefined {
+  const normalized = line.trim().toLowerCase();
+  return CODE_LANG_ALIASES[normalized];
+}
 
-  return blocks.map((block) => `<p>${escapeHtml(block)}</p>`).join("");
+function isLikelyCodeLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+
+  if (/^(```|#\s|\/\/|\/\*|\*\/|\$ )/.test(trimmed)) {
+    return true;
+  }
+
+  if (/^(git|npm|pnpm|yarn|npx|node|python|pip|curl|tmux|gh|docker|kubectl|cd|ls|cat|echo|export)\b/i.test(trimmed)) {
+    return true;
+  }
+
+  if (/^[./~$][^\s].*/.test(trimmed)) {
+    return true;
+  }
+
+  if (/^[-]{1,2}[a-z0-9][\w-]*/i.test(trimmed)) {
+    return true;
+  }
+
+  if (/^[\[\]\{\}",:]+$/.test(trimmed)) {
+    return true;
+  }
+
+  if (/^"[^"]+"\s*:/.test(trimmed)) {
+    return true;
+  }
+
+  if (/^(if|for|while|case|then|else|elif|fi|do|done)\b/.test(trimmed)) {
+    return true;
+  }
+
+  if (/\\$/.test(trimmed)) {
+    return true;
+  }
+
+  if (/^[a-z_][a-z0-9_]*\s*=/.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+}
+
+function isCodeContinuationLine(previousLine: string | undefined, currentLine: string): boolean {
+  const previous = previousLine?.trim();
+  const current = currentLine.trim();
+  if (!previous || current.length === 0) {
+    return false;
+  }
+
+  if (previous.endsWith("\\")) {
+    return true;
+  }
+
+  if ((previous.endsWith("{") || previous.endsWith(",")) && /^"[^"]+"/.test(current)) {
+    return true;
+  }
+
+  return false;
+}
+
+function renderSnapshotBlocks(lines: string[]): { contentHtml: string; excerptText: string } {
+  const html: string[] = [];
+  const excerptParts: string[] = [];
+
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index];
+    const language = parseCodeLanguage(line);
+
+    if (language && index + 1 < lines.length && isLikelyCodeLine(lines[index + 1])) {
+      const codeLines: string[] = [];
+      let cursor = index + 1;
+      while (cursor < lines.length) {
+        const candidate = lines[cursor];
+        const lastCodeLine = codeLines[codeLines.length - 1];
+        if (!isLikelyCodeLine(candidate) && !isCodeContinuationLine(lastCodeLine, candidate)) {
+          break;
+        }
+        codeLines.push(candidate);
+        cursor += 1;
+      }
+      if (codeLines.length > 0) {
+        html.push(
+          `<pre><code class="language-${language}">${escapeHtml(codeLines.join("\n"))}</code></pre>`
+        );
+        index = cursor;
+        continue;
+      }
+    }
+
+    if (isLikelyCodeLine(line) && index + 1 < lines.length && isLikelyCodeLine(lines[index + 1])) {
+      const codeLines: string[] = [line];
+      let cursor = index + 1;
+      while (cursor < lines.length) {
+        const candidate = lines[cursor];
+        const lastCodeLine = codeLines[codeLines.length - 1];
+        if (!isLikelyCodeLine(candidate) && !isCodeContinuationLine(lastCodeLine, candidate)) {
+          break;
+        }
+        codeLines.push(candidate);
+        cursor += 1;
+      }
+      html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      index = cursor;
+      continue;
+    }
+
+    if (/^-\s+/.test(line)) {
+      const items: string[] = [];
+      let cursor = index;
+      while (cursor < lines.length && /^-\s+/.test(lines[cursor])) {
+        const item = lines[cursor].replace(/^-\s+/, "").trim();
+        if (item.length > 0) {
+          items.push(item);
+          excerptParts.push(item);
+        }
+        cursor += 1;
+      }
+      if (items.length > 0) {
+        html.push(`<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`);
+        index = cursor;
+        continue;
+      }
+    }
+
+    html.push(`<p>${escapeHtml(line)}</p>`);
+    excerptParts.push(line);
+    index += 1;
+  }
+
+  return {
+    contentHtml: html.join(""),
+    excerptText: normalizeWhitespace(excerptParts.join(" "))
+  };
 }
 
 function tryExtractFromLinkedSnapshot(page: FetchLinkedPage): ExtractedMainContent | undefined {
@@ -462,21 +650,23 @@ function tryExtractFromLinkedSnapshot(page: FetchLinkedPage): ExtractedMainConte
     return undefined;
   }
 
-  const cleanedText = cleanLinkedTextSnapshot(page.text);
+  const cleanedLines = cleanLinkedTextSnapshot(page.text);
+  const cleanedText = cleanedLines.join(" ");
   if (cleanedText.length < 40 || hasBlockedMarker(cleanedText)) {
     return undefined;
   }
 
-  const textBlocks = cleanedText.split(/\n{2,}/);
-  const titleCandidate = cleanLinkedTitle(page.title) ?? textBlocks[0]?.slice(0, 160);
+  const titleCandidate = cleanLinkedTitle(page.title) ?? cleanedLines[0]?.slice(0, 160);
   if (!titleCandidate) {
     return undefined;
   }
 
+  const rendered = renderSnapshotBlocks(cleanedLines);
+
   return {
     title: titleCandidate,
-    contentHtml: renderTextParagraphs(cleanedText),
-    excerpt: normalizeWhitespace(cleanedText).slice(0, 280)
+    contentHtml: rendered.contentHtml,
+    excerpt: normalizeWhitespace(rendered.excerptText).slice(0, 280)
   };
 }
 

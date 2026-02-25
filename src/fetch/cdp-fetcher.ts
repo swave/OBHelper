@@ -190,6 +190,8 @@ async function collectLinkedPageTextSnapshot(
   const deadline = Date.now() + waitBudgetMs;
   let bestTitle = "";
   let bestText = "";
+  const mergedTextLines: string[] = [];
+  const seenTextLines = new Set<string>();
   let attempts = 0;
   let nonEmptyTextSamples = 0;
 
@@ -209,17 +211,14 @@ async function collectLinkedPageTextSnapshot(
           const raw = (node as HTMLElement).innerText ?? node.textContent ?? "";
           return normalize(raw);
         };
-        const collectTexts = (selector: string): string[] =>
-          [...document.querySelectorAll(selector)]
+        const articleRoot = document.querySelector("main article") ?? document.querySelector("article");
+        const structuredBlocks = articleRoot
+          ? [...articleRoot.querySelectorAll(
+            "h1, h2, h3, p, li, blockquote, pre, [data-testid='markdown-code-block']"
+          )]
             .map((node) => toText(node))
-            .filter((text) => text.length > 0);
-
-        const structuredBlocks = [
-          ...collectTexts("main article h1, main article h2"),
-          ...collectTexts("main article p"),
-          ...collectTexts("article h1, article h2"),
-          ...collectTexts("article p")
-        ];
+            .filter((text) => text.length > 0)
+          : [];
         const structuredText = [...new Set(structuredBlocks)].join("\n\n");
         const bodyText = normalize(document.body?.innerText ?? "");
 
@@ -244,25 +243,47 @@ async function collectLinkedPageTextSnapshot(
       if (titleCandidate.length > bestTitle.length) {
         bestTitle = titleCandidate;
       }
-      if (textCandidate.length > bestText.length) {
-        bestText = textCandidate;
-      }
       if (textCandidate.length > 0) {
         nonEmptyTextSamples += 1;
+        for (const line of textCandidate.split("\n").map((entry) => entry.trim()).filter((entry) => entry.length > 0)) {
+          if (seenTextLines.has(line)) {
+            continue;
+          }
+          seenTextLines.add(line);
+          mergedTextLines.push(line);
+        }
+      }
+      const mergedText = mergedTextLines.join("\n");
+      if (mergedText.length > bestText.length) {
+        bestText = mergedText;
+      }
+      if (textCandidate.length > bestText.length) {
+        bestText = textCandidate;
       }
     }
 
     const enoughText = requireLongText
-      ? bestText.length >= 120 || (bestText.length >= 40 && nonEmptyTextSamples >= 2)
+      ? bestText.length >= 120 && nonEmptyTextSamples >= 3
       : bestText.length > 0 || bestTitle.length > 0;
     const stableNonEmptyText = requireLongText
-      ? bestText.length >= 40 && nonEmptyTextSamples >= 2
+      ? bestText.length >= 40 && nonEmptyTextSamples >= 3
       : nonEmptyTextSamples >= 1;
     if (enoughText || stableNonEmptyText || attempts >= 25 || Date.now() >= deadline) {
       break;
     }
 
-    await sleep(400);
+    if (requireLongText) {
+      try {
+        await page.evaluate(() => {
+          window.scrollBy(0, Math.max(window.innerHeight * 0.6, 500));
+          return undefined;
+        });
+      } catch {
+        // Best effort only.
+      }
+    }
+
+    await sleep(requireLongText ? 700 : 400);
   } while (true);
 
   return {

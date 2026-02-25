@@ -457,7 +457,18 @@ describe("XExtractor", () => {
           url: "https://x.com/elvissun/article/2025920521871716562",
           html: "<html><head><title>X</title></head><body><div id=\"react-root\"></div></body></html>",
           title: "Up Next: The One-Person Million-Dollar Company / X",
-          text: "Up Next: The One-Person Million-Dollar Company\n\nPreferred article body."
+          text: [
+            "To view keyboard shortcuts, press question mark",
+            "Up Next: The One-Person Million-Dollar Company",
+            "Want to publish your own Article?",
+            "Upgrade to Premium",
+            "Follow",
+            "302",
+            "1.5K",
+            "Preferred article body.",
+            "bash",
+            "git worktree add ../feat-custom-templates -b feat/custom-templates origin/main"
+          ].join("\n")
         }
       ]
     });
@@ -465,6 +476,11 @@ describe("XExtractor", () => {
     expect(result.extractionStatus).toBe("ok");
     expect(result.title).toContain("Up Next: The One-Person Million-Dollar Company");
     expect(result.contentHtml).toContain("Preferred article body.");
+    expect(result.contentHtml).toContain("git worktree add ../feat-custom-templates");
+    expect(result.contentHtml).toContain("<pre><code class=\"language-bash\">");
+    expect(result.contentHtml).not.toContain("Want to publish your own Article?");
+    expect(result.contentHtml).not.toContain("Upgrade to Premium");
+    expect(result.contentHtml).not.toContain(">302<");
     expect(result.contentHtml).not.toContain("External marketing page.");
   });
 });
