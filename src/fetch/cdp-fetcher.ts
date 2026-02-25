@@ -27,6 +27,12 @@ interface PlaywrightLike {
   };
 }
 
+interface CdpVersionResponse {
+  webSocketDebuggerUrl?: string;
+}
+
+type FetchCdpVersion = (endpointURL: string, timeoutMs: number) => Promise<CdpVersionResponse | undefined>;
+
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 async function defaultLoadPlaywright(): Promise<PlaywrightLike> {
@@ -42,10 +48,66 @@ async function defaultLoadPlaywright(): Promise<PlaywrightLike> {
   }
 }
 
+function summarizeError(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function toVersionEndpoint(endpointURL: string): string {
+  const trimmed = endpointURL.trim().replace(/\/+$/, "");
+  if (trimmed.endsWith("/json/version")) {
+    return trimmed;
+  }
+
+  return `${trimmed}/json/version`;
+}
+
+function isHttpEndpoint(endpointURL: string): boolean {
+  const lower = endpointURL.toLowerCase();
+  return lower.startsWith("http://") || lower.startsWith("https://");
+}
+
+async function defaultFetchCdpVersion(endpointURL: string, timeoutMs: number): Promise<CdpVersionResponse | undefined> {
+  if (!isHttpEndpoint(endpointURL)) {
+    return undefined;
+  }
+
+  const versionURL = toVersionEndpoint(endpointURL);
+
+  try {
+    const response = await fetch(versionURL, {
+      headers: {
+        accept: "application/json"
+      },
+      signal: AbortSignal.timeout(Math.min(timeoutMs, 8_000))
+    });
+    if (!response.ok) {
+      return undefined;
+    }
+
+    const payload = await response.json() as Record<string, unknown>;
+    const webSocketDebuggerUrl = typeof payload.webSocketDebuggerUrl === "string"
+      ? payload.webSocketDebuggerUrl
+      : undefined;
+
+    return {
+      webSocketDebuggerUrl
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export class CdpFetcher implements Fetcher {
   public readonly id = "cdp";
 
-  public constructor(private readonly loadPlaywright: () => Promise<PlaywrightLike> = defaultLoadPlaywright) {}
+  public constructor(
+    private readonly loadPlaywright: () => Promise<PlaywrightLike> = defaultLoadPlaywright,
+    private readonly fetchCdpVersion: FetchCdpVersion = defaultFetchCdpVersion
+  ) {}
 
   public async fetch(options: FetchOptions): Promise<FetchResult> {
     const cdpEndpoint = options.cdpEndpoint?.trim();
@@ -59,13 +121,30 @@ export class CdpFetcher implements Fetcher {
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const playwright = await this.loadPlaywright();
 
-    let browser: CdpBrowserLike;
-    try {
-      browser = await playwright.chromium.connectOverCDP(cdpEndpoint);
-    } catch {
+    const endpointCandidates: string[] = [cdpEndpoint];
+    const version = await this.fetchCdpVersion(cdpEndpoint, timeoutMs);
+    const discoveredWs = version?.webSocketDebuggerUrl?.trim();
+    if (discoveredWs && !endpointCandidates.includes(discoveredWs)) {
+      endpointCandidates.push(discoveredWs);
+    }
+
+    let browser: CdpBrowserLike | undefined;
+    let lastConnectError: unknown;
+    for (const endpoint of endpointCandidates) {
+      try {
+        browser = await playwright.chromium.connectOverCDP(endpoint);
+        break;
+      } catch (error) {
+        lastConnectError = error;
+      }
+    }
+
+    if (!browser) {
+      const attempted = endpointCandidates.join(", ");
+      const reason = lastConnectError ? ` (${summarizeError(lastConnectError)})` : "";
       throw new ObfronterError(
         "CDP_CONNECT_FAILED",
-        `Failed to connect to Chrome DevTools endpoint: ${cdpEndpoint}`
+        `Failed to connect to Chrome DevTools endpoint: ${cdpEndpoint}. Tried: ${attempted}${reason}`
       );
     }
 
