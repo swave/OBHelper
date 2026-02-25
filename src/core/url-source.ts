@@ -1,0 +1,36 @@
+import type { SourcePlatform } from "./types.js";
+
+const X_HOSTS = new Set([
+  "x.com",
+  "www.x.com",
+  "twitter.com",
+  "www.twitter.com",
+  "mobile.twitter.com"
+]);
+
+const WEIXIN_HOSTS = new Set(["mp.weixin.qq.com"]);
+
+const WEIBO_HOSTS = new Set([
+  "weibo.com",
+  "www.weibo.com",
+  "m.weibo.cn",
+  "weibo.cn"
+]);
+
+export function detectSourcePlatform(url: URL): SourcePlatform {
+  const host = url.hostname.toLowerCase();
+
+  if (X_HOSTS.has(host)) {
+    return "x";
+  }
+
+  if (WEIXIN_HOSTS.has(host)) {
+    return "weixin";
+  }
+
+  if (WEIBO_HOSTS.has(host)) {
+    return "weibo";
+  }
+
+  return "generic";
+}
