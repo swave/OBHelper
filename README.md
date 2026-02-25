@@ -83,7 +83,7 @@ Some pages require login, anti-bot checks, or dynamic rendering. The scaffold in
 ## X Provider (v1)
 - Supports only X status URLs (`https://x.com/<handle>/status/<id>` or `/i/web/status/<id>`).
 - Defaults to browser mode for X and uses `chrome` browser channel by default.
-- If extraction is blocked, it writes a blocked note instead of silently failing.
+- If direct HTML extraction is blocked, it attempts a public oEmbed fallback before writing a blocked note.
 
 ## Weixin Provider (v1)
 - Supports only article URLs shaped like `https://mp.weixin.qq.com/s?...` with article query identifiers.

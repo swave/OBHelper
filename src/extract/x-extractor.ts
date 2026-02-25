@@ -267,8 +267,109 @@ function buildTitle(input: { fallbackTitle?: string; authorHandle?: string; stat
   return input.blocked ? `${base} (Blocked)` : base;
 }
 
+interface OEmbedPayload {
+  html?: string;
+  author_name?: string;
+}
+
+interface OEmbedResponseLike {
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+}
+
+type OEmbedFetch = (url: string) => Promise<OEmbedResponseLike>;
+
+function defaultOEmbedFetch(url: string): Promise<OEmbedResponseLike> {
+  return fetch(url, {
+    headers: {
+      accept: "application/json"
+    }
+  });
+}
+
+function parseOEmbedContentHtml(html: string): { contentHtml: string; text: string } | undefined {
+  const dom = new JSDOM(html);
+  const blockquote = dom.window.document.querySelector("blockquote");
+  const fallbackNode = blockquote ?? dom.window.document.body;
+  const text = normalizeWhitespace(fallbackNode.textContent ?? "");
+
+  if (!text || hasBlockedMarker(text)) {
+    return undefined;
+  }
+
+  return {
+    contentHtml: blockquote ? blockquote.innerHTML : `<p>${escapeHtml(text)}</p>`,
+    text
+  };
+}
+
 export class XExtractor implements ContentExtractor {
   public readonly id = "x";
+
+  public constructor(private readonly oEmbedFetch: OEmbedFetch = defaultOEmbedFetch) {}
+
+  private async tryOEmbedFallback(input: {
+    statusUrl: string;
+    fallbackTitle?: string;
+    statusRef: { statusId?: string; authorHandle?: string };
+    authorHandle?: string;
+    publishedAt?: string;
+    mediaUrls: string[];
+  }): Promise<ExtractedMainContent | undefined> {
+    const endpoint = new URL("https://publish.twitter.com/oembed");
+    endpoint.searchParams.set("url", input.statusUrl);
+    endpoint.searchParams.set("omit_script", "true");
+    endpoint.searchParams.set("dnt", "true");
+    endpoint.searchParams.set("lang", "en");
+
+    let response: OEmbedResponseLike;
+    try {
+      response = await this.oEmbedFetch(endpoint.toString());
+    } catch {
+      return undefined;
+    }
+
+    if (!response.ok) {
+      return undefined;
+    }
+
+    let payload: OEmbedPayload;
+    try {
+      payload = (await response.json()) as OEmbedPayload;
+    } catch {
+      return undefined;
+    }
+
+    if (!payload.html) {
+      return undefined;
+    }
+
+    const parsed = parseOEmbedContentHtml(payload.html);
+    if (!parsed) {
+      return undefined;
+    }
+
+    const oEmbedAuthor = normalizeWhitespace(payload.author_name ?? "");
+    const title = buildTitle({
+      fallbackTitle: input.fallbackTitle ?? (oEmbedAuthor ? `${oEmbedAuthor} on X` : undefined),
+      authorHandle: input.authorHandle,
+      statusId: input.statusRef.statusId,
+      blocked: false
+    });
+
+    return {
+      title,
+      contentHtml: parsed.contentHtml,
+      byline: input.authorHandle ? `@${input.authorHandle}` : (oEmbedAuthor || undefined),
+      excerpt: parsed.text.slice(0, 280),
+      publishedAt: input.publishedAt,
+      extractionStatus: "ok",
+      authorHandle: input.authorHandle,
+      statusId: input.statusRef.statusId,
+      mediaUrls: input.mediaUrls.length > 0 ? input.mediaUrls : undefined
+    };
+  }
 
   public async extract(input: FetchResult): Promise<ExtractedMainContent> {
     const finalUrl = new URL(input.finalUrl);
@@ -302,6 +403,18 @@ export class XExtractor implements ContentExtractor {
         statusId: statusRef.statusId,
         mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined
       };
+    }
+
+    const oEmbedFallback = await this.tryOEmbedFallback({
+      statusUrl: input.finalUrl,
+      fallbackTitle,
+      statusRef,
+      authorHandle,
+      publishedAt: publishedAt ?? undefined,
+      mediaUrls
+    });
+    if (oEmbedFallback) {
+      return oEmbedFallback;
     }
 
     const blockedReason = detectBlockedReason(document);

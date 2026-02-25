@@ -30,7 +30,7 @@ describe("resolveCookieHeader", () => {
   it("parses netscape cookie file into cookie header", async () => {
     const netscape = [
       "# Netscape HTTP Cookie File",
-      ".x.com\tTRUE\t/\tTRUE\t0\tauth_token\taaa",
+      "#HttpOnly_.x.com\tTRUE\t/\tTRUE\t0\tauth_token\taaa",
       ".x.com\tTRUE\t/\tTRUE\t0\tct0\tbbb"
     ].join("\n");
 

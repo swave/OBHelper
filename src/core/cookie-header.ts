@@ -14,11 +14,20 @@ function parseNetscapeCookieFile(raw: string): string | undefined {
 
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
+    if (!trimmed) {
       continue;
     }
 
-    const parts = trimmed.split("\t");
+    // Netscape format may prefix HttpOnly cookie domains with "#HttpOnly_".
+    const normalizedLine = trimmed.startsWith("#HttpOnly_")
+      ? trimmed.slice("#HttpOnly_".length)
+      : trimmed;
+
+    if (normalizedLine.startsWith("#")) {
+      continue;
+    }
+
+    const parts = normalizedLine.split("\t");
     if (parts.length < 7) {
       continue;
     }
