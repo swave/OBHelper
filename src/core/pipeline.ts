@@ -18,6 +18,7 @@ const pipelineInputSchema = z.object({
   fetch: z.object({
     timeoutMs: z.number().int().positive().optional(),
     sessionProfileDir: z.string().optional(),
+    browserChannel: z.enum(["chrome", "chromium", "msedge"]).optional(),
     headers: z.record(z.string()).optional()
   })
 });
@@ -52,6 +53,7 @@ export async function runPipeline(
     url: parsedUrl.toString(),
     timeoutMs: parsed.fetch.timeoutMs,
     sessionProfileDir: parsed.fetch.sessionProfileDir,
+    browserChannel: parsed.fetch.browserChannel,
     headers: parsed.fetch.headers
   });
 

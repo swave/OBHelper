@@ -1,5 +1,5 @@
 import { runPipeline } from "./core/pipeline.js";
-import type { PipelineResult } from "./core/types.js";
+import type { BrowserChannel, PipelineResult } from "./core/types.js";
 import { ObfronterError } from "./core/errors.js";
 import { detectSourcePlatform } from "./core/url-source.js";
 import { createDefaultDependencies } from "./providers/default-deps.js";
@@ -12,6 +12,7 @@ export interface FetchCommandInput {
   browserMode?: boolean;
   forceHttpMode?: boolean;
   sessionProfileDir?: string;
+  browserChannel?: BrowserChannel;
   overwrite?: boolean;
   headers?: Record<string, string>;
 }
@@ -20,6 +21,7 @@ export async function runFetchCommand(input: FetchCommandInput): Promise<Pipelin
   const inputUrl = new URL(input.url);
   const sourcePlatform = detectSourcePlatform(inputUrl);
   const browserMode = input.forceHttpMode ? false : (input.browserMode ?? sourcePlatform === "x");
+  const browserChannel = input.browserChannel ?? (browserMode && sourcePlatform === "x" ? "chrome" : undefined);
 
   if (sourcePlatform === "x" && browserMode && !input.sessionProfileDir) {
     throw new ObfronterError(
@@ -43,6 +45,7 @@ export async function runFetchCommand(input: FetchCommandInput): Promise<Pipelin
       fetch: {
         timeoutMs: input.timeoutMs,
         sessionProfileDir: input.sessionProfileDir,
+        browserChannel,
         headers: input.headers
       }
     },

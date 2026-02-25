@@ -1,9 +1,11 @@
 export type SourcePlatform = "x" | "weixin" | "weibo" | "generic";
+export type BrowserChannel = "chrome" | "chromium" | "msedge";
 
 export interface FetchOptions {
   url: string;
   timeoutMs?: number;
   sessionProfileDir?: string;
+  browserChannel?: BrowserChannel;
   headers?: Record<string, string>;
 }
 

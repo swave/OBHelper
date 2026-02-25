@@ -33,7 +33,10 @@ describe("runXLoginCommand", () => {
       }
     );
 
-    expect(launchPersistentContext).toHaveBeenCalledWith("/tmp/obfronter-profile", { headless: false });
+    expect(launchPersistentContext).toHaveBeenCalledWith("/tmp/obfronter-profile", {
+      headless: false,
+      channel: "chrome"
+    });
     expect(goto).toHaveBeenCalledWith("https://x.com/login", {
       waitUntil: "domcontentloaded",
       timeout: 12_345
@@ -45,6 +48,42 @@ describe("runXLoginCommand", () => {
       sessionProfileDir: "/tmp/obfronter-profile",
       loginUrl: "https://x.com/login"
     });
+  });
+
+  it("uses provided browser channel", async () => {
+    const close = vi.fn(async () => undefined);
+    const waitForUserConfirm = vi.fn(async () => undefined);
+
+    const launchPersistentContext = vi.fn(async () => ({
+      newPage: async () => ({
+        goto: async () => undefined
+      }),
+      close
+    }));
+
+    const loadPlaywright = vi.fn(async () => ({
+      chromium: {
+        launchPersistentContext
+      }
+    }));
+
+    await runXLoginCommand(
+      {
+        sessionProfileDir: "/tmp/obfronter-profile",
+        browserChannel: "chromium"
+      },
+      {
+        loadPlaywright,
+        waitForUserConfirm,
+        emit: () => undefined
+      }
+    );
+
+    expect(launchPersistentContext).toHaveBeenCalledWith("/tmp/obfronter-profile", {
+      headless: false,
+      channel: "chromium"
+    });
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it("fails when session profile dir is missing", async () => {

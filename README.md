@@ -27,6 +27,7 @@ Options:
 - `--browser-mode`: force browser-session fetch mode (Playwright)
 - `--http-mode`: force plain HTTP fetch mode (disables X auto browser mode)
 - `--session-profile-dir <path>`: browser profile dir for authenticated cookies
+- `--browser-channel <name>`: browser channel for login/fetch browser mode (`chrome`, `chromium`, `msedge`)
 - `--timeout-ms <number>`: fetch timeout
 - `--overwrite`: overwrite existing target file
 - `--header <k:v>`: repeatable custom HTTP header
@@ -37,7 +38,7 @@ Login-specific options:
 
 Example:
 ```bash
-obfronter login x --session-profile-dir "$HOME/.obfronter/profiles/x"
+obfronter login x --session-profile-dir "$HOME/.obfronter/profiles/x" --browser-channel chrome
 ```
 
 ## Architecture
@@ -70,7 +71,7 @@ Some pages require login, anti-bot checks, or dynamic rendering. The scaffold in
 
 ## X Provider (v1)
 - Supports only X status URLs (`https://x.com/<handle>/status/<id>` or `/i/web/status/<id>`).
-- Defaults to browser mode for X to improve extraction stability.
+- Defaults to browser mode for X and uses `chrome` browser channel by default.
 - If extraction is blocked, it writes a blocked note instead of silently failing.
 
 ## Weixin Provider (v1)

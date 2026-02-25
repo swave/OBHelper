@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline/promises";
 
 import { ObfronterError } from "../core/errors.js";
+import type { BrowserChannel } from "../core/types.js";
 
 interface PlaywrightPageLike {
   goto: (
@@ -18,7 +19,7 @@ interface PlaywrightLike {
   chromium: {
     launchPersistentContext: (
       userDataDir: string,
-      options: { headless: boolean }
+      options: { headless: boolean; channel?: BrowserChannel }
     ) => Promise<PlaywrightContextLike>;
   };
 }
@@ -28,6 +29,7 @@ export interface XLoginCommandInput {
   loginUrl?: string;
   timeoutMs?: number;
   headless?: boolean;
+  browserChannel?: BrowserChannel;
 }
 
 interface LoginDependencies {
@@ -80,6 +82,7 @@ export async function runXLoginCommand(
   const loginUrl = input.loginUrl ?? DEFAULT_LOGIN_URL;
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const headless = input.headless ?? false;
+  const browserChannel = input.browserChannel ?? "chrome";
 
   const dependencies: LoginDependencies = {
     loadPlaywright: overrides?.loadPlaywright ?? defaultLoadPlaywright,
@@ -88,9 +91,18 @@ export async function runXLoginCommand(
   };
 
   const playwright = await dependencies.loadPlaywright();
-  const context = await playwright.chromium.launchPersistentContext(input.sessionProfileDir, {
-    headless
-  });
+  let context: PlaywrightContextLike;
+  try {
+    context = await playwright.chromium.launchPersistentContext(input.sessionProfileDir, {
+      headless,
+      channel: browserChannel
+    });
+  } catch {
+    throw new ObfronterError(
+      "BROWSER_LAUNCH_FAILED",
+      `Failed to launch browser channel '${browserChannel}'. Install that browser or use --browser-channel chromium.`
+    );
+  }
 
   try {
     const page = await context.newPage();

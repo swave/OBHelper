@@ -1,12 +1,12 @@
 import { ObfronterError } from "../core/errors.js";
-import type { FetchOptions, FetchResult } from "../core/types.js";
+import type { BrowserChannel, FetchOptions, FetchResult } from "../core/types.js";
 import type { Fetcher } from "./fetcher.js";
 
 interface PlaywrightLike {
   chromium: {
     launchPersistentContext: (
       userDataDir: string,
-      options: { headless: boolean }
+      options: { headless: boolean; channel?: BrowserChannel }
     ) => Promise<{
       newPage: () => Promise<{
         goto: (
@@ -45,9 +45,19 @@ export class BrowserFetcher implements Fetcher {
       );
     }
 
-    const context = await playwright.chromium.launchPersistentContext(options.sessionProfileDir, {
-      headless: true
-    });
+    let context: Awaited<ReturnType<PlaywrightLike["chromium"]["launchPersistentContext"]>>;
+    try {
+      context = await playwright.chromium.launchPersistentContext(options.sessionProfileDir, {
+        headless: true,
+        channel: options.browserChannel
+      });
+    } catch {
+      const channel = options.browserChannel ?? "chromium";
+      throw new ObfronterError(
+        "BROWSER_LAUNCH_FAILED",
+        `Failed to launch browser channel '${channel}'. Install that browser or choose another with --browser-channel.`
+      );
+    }
 
     try {
       const page = await context.newPage();
