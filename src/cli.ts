@@ -14,7 +14,8 @@ Usage:
 Options:
   --vault <path>                Obsidian vault root path (or set OBSIDIAN_VAULT_PATH)
   --subdir <name>               Subdirectory inside vault (default: Inbox)
-  --browser-mode                Use Playwright-backed browser fetch mode
+  --browser-mode                Force Playwright-backed browser fetch mode
+  --http-mode                   Force plain HTTP fetch mode (disables X default browser mode)
   --session-profile-dir <path>  Browser profile dir for authenticated cookies
   --timeout-ms <number>         Fetch timeout in milliseconds (default: 20000)
   --overwrite                   Overwrite target file if it exists
@@ -65,7 +66,8 @@ async function main(): Promise<void> {
     options: {
       vault: { type: "string" },
       subdir: { type: "string" },
-      "browser-mode": { type: "boolean", default: false },
+      "browser-mode": { type: "boolean" },
+      "http-mode": { type: "boolean", default: false },
       "session-profile-dir": { type: "string" },
       "timeout-ms": { type: "string" },
       overwrite: { type: "boolean", default: false },
@@ -77,6 +79,10 @@ async function main(): Promise<void> {
   if (parsed.values.help) {
     printHelp();
     return;
+  }
+
+  if (parsed.values["browser-mode"] && parsed.values["http-mode"]) {
+    throw new ObfronterError("INVALID_MODE", "Choose only one of --browser-mode or --http-mode.");
   }
 
   const url = parsed.positionals[0];
@@ -108,6 +114,7 @@ async function main(): Promise<void> {
     vaultPath,
     subdirectory: parsed.values.subdir ?? "Inbox",
     browserMode: parsed.values["browser-mode"],
+    forceHttpMode: parsed.values["http-mode"],
     sessionProfileDir: parsed.values["session-profile-dir"],
     timeoutMs,
     overwrite: parsed.values.overwrite,

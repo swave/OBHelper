@@ -21,6 +21,10 @@ export interface ExtractedMainContent {
   byline?: string;
   excerpt?: string;
   publishedAt?: string;
+  extractionStatus?: "ok" | "blocked";
+  authorHandle?: string;
+  statusId?: string;
+  mediaUrls?: string[];
 }
 
 export interface NormalizedDocument {
@@ -32,6 +36,10 @@ export interface NormalizedDocument {
   byline?: string;
   excerpt?: string;
   publishedAt?: string;
+  extractionStatus?: "ok" | "blocked";
+  authorHandle?: string;
+  statusId?: string;
+  mediaUrls?: string[];
 }
 
 export interface WriteOptions {

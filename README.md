@@ -20,7 +20,8 @@ obfronter fetch <url> --vault <path> [options]
 
 Options:
 - `--subdir <name>`: vault subdirectory (default: `Inbox`)
-- `--browser-mode`: use browser-session fetch mode (Playwright)
+- `--browser-mode`: force browser-session fetch mode (Playwright)
+- `--http-mode`: force plain HTTP fetch mode (disables X auto browser mode)
 - `--session-profile-dir <path>`: browser profile dir for authenticated cookies
 - `--timeout-ms <number>`: fetch timeout
 - `--overwrite`: overwrite existing target file
@@ -53,3 +54,8 @@ This runs lint, typecheck, and coverage-enabled unit tests.
 
 ## Notes on Access Restrictions
 Some pages require login, anti-bot checks, or dynamic rendering. The scaffold includes browser-session mode as a compliant extension point; no CAPTCHA bypass logic is included.
+
+## X Provider (v1)
+- Supports only X status URLs (`https://x.com/<handle>/status/<id>` or `/i/web/status/<id>`).
+- Defaults to browser mode for X to improve extraction stability.
+- If extraction is blocked, it writes a blocked note instead of silently failing.

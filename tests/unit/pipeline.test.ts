@@ -83,4 +83,24 @@ describe("runPipeline", () => {
     expect(result.saved.outputPath).toBe("/vault/Inbox/file.md");
     expect(result.normalized.markdownBody).toContain("Body");
   });
+
+  it("rejects non-status x URLs", async () => {
+    await expect(() =>
+      runPipeline(
+        {
+          url: "https://x.com/someone",
+          write: {
+            vaultPath: "/vault",
+            subdirectory: "Inbox"
+          },
+          fetch: {}
+        },
+        {
+          fetcher: new FakeFetcher(),
+          extractors: new FakeRegistry(),
+          writer: new FakeWriter()
+        }
+      )
+    ).rejects.toThrow("X provider currently supports only status URLs");
+  });
 });

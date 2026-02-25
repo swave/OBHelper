@@ -1,11 +1,12 @@
 import { z } from "zod";
 
-import { detectSourcePlatform } from "./url-source.js";
+import { detectSourcePlatform, isXStatusUrl } from "./url-source.js";
 import type { PipelineInput, PipelineResult } from "./types.js";
 import { toNormalizedDocument } from "../markdown/render.js";
 import type { Fetcher } from "../fetch/fetcher.js";
 import type { DocumentWriter } from "../obsidian/writer.js";
 import type { ExtractorResolver } from "../providers/extractor-registry.js";
+import { ObfronterError } from "./errors.js";
 
 const pipelineInputSchema = z.object({
   url: z.string().url(),
@@ -32,6 +33,13 @@ export async function runPipeline(
   const parsed = pipelineInputSchema.parse(input);
   const parsedUrl = new URL(parsed.url);
   const sourcePlatform = detectSourcePlatform(parsedUrl);
+
+  if (sourcePlatform === "x" && !isXStatusUrl(parsedUrl)) {
+    throw new ObfronterError(
+      "X_STATUS_URL_REQUIRED",
+      `X provider currently supports only status URLs: ${parsedUrl.toString()}`
+    );
+  }
 
   const fetched = await dependencies.fetcher.fetch({
     url: parsedUrl.toString(),

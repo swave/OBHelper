@@ -28,7 +28,11 @@ export function toNormalizedDocument(input: {
     markdownBody,
     byline: input.extracted.byline,
     excerpt: input.extracted.excerpt,
-    publishedAt: input.extracted.publishedAt
+    publishedAt: input.extracted.publishedAt,
+    extractionStatus: input.extracted.extractionStatus,
+    authorHandle: input.extracted.authorHandle,
+    statusId: input.extracted.statusId,
+    mediaUrls: input.extracted.mediaUrls
   };
 }
 
@@ -51,6 +55,25 @@ export function renderMarkdownFile(document: NormalizedDocument): string {
 
   if (document.publishedAt) {
     frontmatter.push(`published_at: ${yamlEscape(document.publishedAt)}`);
+  }
+
+  if (document.extractionStatus) {
+    frontmatter.push(`extraction_status: ${document.extractionStatus}`);
+  }
+
+  if (document.authorHandle) {
+    frontmatter.push(`author_handle: ${yamlEscape(document.authorHandle)}`);
+  }
+
+  if (document.statusId) {
+    frontmatter.push(`status_id: ${yamlEscape(document.statusId)}`);
+  }
+
+  if (document.mediaUrls && document.mediaUrls.length > 0) {
+    frontmatter.push("media_urls:");
+    for (const mediaUrl of document.mediaUrls) {
+      frontmatter.push(`  - ${yamlEscape(mediaUrl)}`);
+    }
   }
 
   frontmatter.push("---", "");

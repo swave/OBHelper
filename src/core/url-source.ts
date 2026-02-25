@@ -34,3 +34,32 @@ export function detectSourcePlatform(url: URL): SourcePlatform {
 
   return "generic";
 }
+
+export interface XStatusRef {
+  statusId: string;
+  authorHandle?: string;
+}
+
+export function parseXStatusRef(url: URL): XStatusRef | undefined {
+  const path = url.pathname.replace(/\/+$/, "");
+  const userStatusMatch = path.match(/^\/([^/]+)\/status\/([0-9A-Za-z_]+)$/i);
+  if (userStatusMatch) {
+    return {
+      authorHandle: userStatusMatch[1],
+      statusId: userStatusMatch[2]
+    };
+  }
+
+  const webStatusMatch = path.match(/^\/i\/web\/status\/([0-9A-Za-z_]+)$/i);
+  if (webStatusMatch) {
+    return {
+      statusId: webStatusMatch[1]
+    };
+  }
+
+  return undefined;
+}
+
+export function isXStatusUrl(url: URL): boolean {
+  return parseXStatusRef(url) !== undefined;
+}
