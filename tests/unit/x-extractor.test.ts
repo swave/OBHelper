@@ -311,4 +311,160 @@ describe("XExtractor", () => {
     expect(result.excerpt).toContain("Expanded");
     expect(oEmbedFetch).not.toHaveBeenCalled();
   });
+
+  it("uses prefetched linked pages from fetch result for direct link-only tweets", async () => {
+    const oEmbedFetch = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({})
+    }));
+    const extractor = new XExtractor(
+      oEmbedFetch,
+      async () => undefined,
+      async () => ({
+        ok: false,
+        status: 404,
+        url: "https://example.com/unreachable",
+        text: async () => ""
+      })
+    );
+    const html = `
+      <html>
+        <head>
+          <meta property="og:title" content="Elvis on X" />
+        </head>
+        <body>
+          <article data-testid="tweet">
+            <div data-testid="tweetText">
+              <a href="https://t.co/DotZ3V6XhJ">https://t.co/DotZ3V6XhJ</a>
+            </div>
+            <time datetime="2026-02-23T10:00:00.000Z"></time>
+          </article>
+        </body>
+      </html>
+    `;
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/elvissun/status/2025920521871716562",
+      finalUrl: "https://x.com/elvissun/status/2025920521871716562",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-02-25T12:06:00.000Z",
+      linkedPages: [
+        {
+          url: "https://example.com/full-article",
+          html: "<html><head><title>Up Next: The One-Person Million-Dollar Company</title></head><body><article><h1>Up Next: The One-Person Million-Dollar Company</h1><p>Long-form article text from linked page.</p></article></body></html>"
+        }
+      ]
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.title).toContain("Up Next: The One-Person Million-Dollar Company");
+    expect(result.contentHtml).toContain("Linked content extracted from");
+    expect(result.contentHtml).toContain("Long-form article text from linked page.");
+    expect(result.excerpt).toContain("Long-form");
+    expect(oEmbedFetch).not.toHaveBeenCalled();
+  });
+
+  it("accepts prefetched x article pages as linked content", async () => {
+    const oEmbedFetch = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({})
+    }));
+    const extractor = new XExtractor(
+      oEmbedFetch,
+      async () => undefined,
+      async () => ({
+        ok: false,
+        status: 404,
+        url: "https://x.com/elvissun/article/2025920521871716562",
+        text: async () => ""
+      })
+    );
+    const html = `
+      <html>
+        <body>
+          <article data-testid="tweet">
+            <div data-testid="tweetText">
+              <a href="https://t.co/DotZ3V6XhJ">https://t.co/DotZ3V6XhJ</a>
+            </div>
+          </article>
+        </body>
+      </html>
+    `;
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/elvissun/status/2025920521871716562",
+      finalUrl: "https://x.com/elvissun/status/2025920521871716562",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-02-25T12:07:00.000Z",
+      linkedPages: [
+        {
+          url: "https://x.com/elvissun/article/2025920521871716562",
+          html: "<html><head><title>Up Next: The One-Person Million-Dollar Company</title></head><body><article><h1>Up Next: The One-Person Million-Dollar Company</h1><p>Full article body from X article page.</p></article></body></html>"
+        }
+      ]
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.title).toContain("Up Next: The One-Person Million-Dollar Company");
+    expect(result.contentHtml).toContain("Full article body from X article page.");
+    expect(oEmbedFetch).not.toHaveBeenCalled();
+  });
+
+  it("prioritizes prefetched x article content over generic external links", async () => {
+    const oEmbedFetch = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({})
+    }));
+    const extractor = new XExtractor(
+      oEmbedFetch,
+      async () => undefined,
+      async () => ({
+        ok: false,
+        status: 404,
+        url: "https://example.com",
+        text: async () => ""
+      })
+    );
+    const html = `
+      <html>
+        <body>
+          <article data-testid="tweet">
+            <div data-testid="tweetText">
+              <a href="https://t.co/DotZ3V6XhJ">https://t.co/DotZ3V6XhJ</a>
+            </div>
+          </article>
+        </body>
+      </html>
+    `;
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/elvissun/status/2025920521871716562",
+      finalUrl: "https://x.com/elvissun/status/2025920521871716562",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-02-25T12:08:00.000Z",
+      linkedPages: [
+        {
+          url: "https://example.com/landing",
+          html: "<html><head><title>Landing</title></head><body><article><h1>Landing</h1><p>External marketing page.</p></article></body></html>"
+        },
+        {
+          url: "https://x.com/elvissun/article/2025920521871716562",
+          html: "<html><head><title>X</title></head><body><div id=\"react-root\"></div></body></html>",
+          title: "Up Next: The One-Person Million-Dollar Company / X",
+          text: "Up Next: The One-Person Million-Dollar Company\n\nPreferred article body."
+        }
+      ]
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.title).toContain("Up Next: The One-Person Million-Dollar Company");
+    expect(result.contentHtml).toContain("Preferred article body.");
+    expect(result.contentHtml).not.toContain("External marketing page.");
+  });
 });

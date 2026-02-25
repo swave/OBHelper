@@ -1,7 +1,7 @@
 import { JSDOM } from "jsdom";
 
 import { parseXStatusRef } from "../core/url-source.js";
-import type { ExtractedMainContent, FetchResult } from "../core/types.js";
+import type { ExtractedMainContent, FetchLinkedPage, FetchResult } from "../core/types.js";
 import type { ContentExtractor } from "./extractor.js";
 import { GenericExtractor } from "./generic-extractor.js";
 
@@ -377,6 +377,109 @@ function isXLikeHost(inputUrl: string): boolean {
   }
 }
 
+function isXArticleUrl(inputUrl: string): boolean {
+  try {
+    const parsed = new URL(inputUrl);
+    const host = parsed.hostname.toLowerCase();
+    if (!(host === "x.com" || host.endsWith(".x.com") || host === "twitter.com" || host.endsWith(".twitter.com"))) {
+      return false;
+    }
+
+    return /\/article\/[0-9A-Za-z_]+/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function shouldSkipLinkedSource(inputUrl: string): boolean {
+  return isXLikeHost(inputUrl) && !isXArticleUrl(inputUrl);
+}
+
+const X_SNAPSHOT_NOISE_LINES = new Set([
+  "home",
+  "explore",
+  "notifications",
+  "messages",
+  "bookmarks",
+  "jobs",
+  "communities",
+  "premium",
+  "verified orgs",
+  "profile",
+  "more",
+  "post",
+  "log in",
+  "sign up"
+]);
+
+function cleanLinkedTextSnapshot(raw: string): string {
+  const lines = raw
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => normalizeWhitespace(line))
+    .filter((line) => line.length > 0)
+    .filter((line) => !X_SNAPSHOT_NOISE_LINES.has(line.toLowerCase()));
+
+  const deduped: string[] = [];
+  for (const line of lines) {
+    if (deduped[deduped.length - 1] === line) {
+      continue;
+    }
+    deduped.push(line);
+  }
+
+  return deduped.join("\n\n");
+}
+
+function cleanLinkedTitle(rawTitle: string | undefined): string | undefined {
+  if (!rawTitle) {
+    return undefined;
+  }
+
+  const cleaned = normalizeWhitespace(rawTitle)
+    .replace(/\s*[|/]\s*x$/i, "")
+    .replace(/\s+on x$/i, "")
+    .trim();
+
+  if (!cleaned || cleaned.toLowerCase() === "x") {
+    return undefined;
+  }
+
+  return cleaned;
+}
+
+function renderTextParagraphs(text: string): string {
+  const blocks = text
+    .split(/\n{2,}/)
+    .map((block) => normalizeWhitespace(block))
+    .filter((block) => block.length > 0);
+
+  return blocks.map((block) => `<p>${escapeHtml(block)}</p>`).join("");
+}
+
+function tryExtractFromLinkedSnapshot(page: FetchLinkedPage): ExtractedMainContent | undefined {
+  if (!isXArticleUrl(page.url) || !page.text) {
+    return undefined;
+  }
+
+  const cleanedText = cleanLinkedTextSnapshot(page.text);
+  if (cleanedText.length < 40 || hasBlockedMarker(cleanedText)) {
+    return undefined;
+  }
+
+  const textBlocks = cleanedText.split(/\n{2,}/);
+  const titleCandidate = cleanLinkedTitle(page.title) ?? textBlocks[0]?.slice(0, 160);
+  if (!titleCandidate) {
+    return undefined;
+  }
+
+  return {
+    title: titleCandidate,
+    contentHtml: renderTextParagraphs(cleanedText),
+    excerpt: normalizeWhitespace(cleanedText).slice(0, 280)
+  };
+}
+
 function parseOEmbedContentHtml(html: string): { contentHtml: string; text: string; links: string[] } | undefined {
   const dom = new JSDOM(html);
   const paragraph = dom.window.document.querySelector("blockquote p");
@@ -434,7 +537,7 @@ export class XExtractor implements ContentExtractor {
     extracted: ExtractedMainContent;
   } | undefined> {
     for (const link of expandedLinks.slice(0, 3)) {
-      if (isXLikeHost(link)) {
+      if (shouldSkipLinkedSource(link)) {
         continue;
       }
 
@@ -479,6 +582,54 @@ export class XExtractor implements ContentExtractor {
     return undefined;
   }
 
+  private async tryPrefetchedLinkedPageContent(linkedPages: FetchLinkedPage[] | undefined): Promise<{
+    sourceUrl: string;
+    extracted: ExtractedMainContent;
+  } | undefined> {
+    if (!linkedPages || linkedPages.length === 0) {
+      return undefined;
+    }
+
+    const prioritizedPages = [...linkedPages]
+      .sort((left, right) => Number(isXArticleUrl(right.url)) - Number(isXArticleUrl(left.url)))
+      .slice(0, 3);
+
+    for (const page of prioritizedPages) {
+      if (shouldSkipLinkedSource(page.url)) {
+        continue;
+      }
+
+      const snapshotExtracted = tryExtractFromLinkedSnapshot(page);
+      if (snapshotExtracted) {
+        return {
+          sourceUrl: page.url,
+          extracted: snapshotExtracted
+        };
+      }
+
+      try {
+        const extracted = await this.genericExtractor.extract({
+          requestedUrl: page.url,
+          finalUrl: page.url,
+          html: page.html,
+          statusCode: 200,
+          fetchedAt: new Date().toISOString()
+        });
+
+        if (normalizeWhitespace(extracted.excerpt ?? "").length > 20 || normalizeWhitespace(extracted.title).length > 0) {
+          return {
+            sourceUrl: page.url,
+            extracted
+          };
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return undefined;
+  }
+
   private async tryOEmbedFallback(input: {
     statusUrl: string;
     fallbackTitle?: string;
@@ -486,6 +637,7 @@ export class XExtractor implements ContentExtractor {
     authorHandle?: string;
     publishedAt?: string;
     mediaUrls: string[];
+    linkedPages?: FetchLinkedPage[];
   }): Promise<ExtractedMainContent | undefined> {
     const endpoint = new URL("https://publish.twitter.com/oembed");
     endpoint.searchParams.set("url", input.statusUrl);
@@ -531,10 +683,12 @@ export class XExtractor implements ContentExtractor {
     const expandedLinks = [...new Set(await Promise.all(parsed.links.map((url) => this.expandUrl(url))))].filter(
       (url): url is string => Boolean(url && !url.startsWith("https://t.co/"))
     );
-    const linkOnly = isMostlyUrlText(parsed.text) && expandedLinks.length > 0;
+    const prefetchedLinks = [...new Set((input.linkedPages ?? []).map((page) => page.url))];
+    const linkOnly = isMostlyUrlText(parsed.text) && (expandedLinks.length > 0 || prefetchedLinks.length > 0);
 
     if (linkOnly) {
-      const linkedPageContent = await this.tryLinkedPageContent(expandedLinks);
+      const linkedPageContent = await this.tryPrefetchedLinkedPageContent(input.linkedPages) ??
+        await this.tryLinkedPageContent(expandedLinks);
       if (linkedPageContent) {
         return {
           title: linkedPageContent.extracted.title,
@@ -548,15 +702,16 @@ export class XExtractor implements ContentExtractor {
           extractionStatus: "ok",
           authorHandle: input.authorHandle,
           statusId: input.statusRef.statusId,
-          mediaUrls: [...new Set([...(input.mediaUrls || []), ...expandedLinks])]
+          mediaUrls: [...new Set([...(input.mediaUrls || []), ...expandedLinks, ...prefetchedLinks])]
         };
       }
     }
 
+    const linkTargets = [...new Set([...expandedLinks, ...prefetchedLinks])];
     const enrichedContentHtml = linkOnly
-      ? `${parsed.contentHtml}${renderExpandedLinksBlock(expandedLinks)}`
+      ? `${parsed.contentHtml}${renderExpandedLinksBlock(linkTargets)}`
       : parsed.contentHtml;
-    const excerpt = linkOnly ? expandedLinks.join(" ") : parsed.text;
+    const excerpt = linkOnly ? linkTargets.join(" ") : parsed.text;
 
     return {
       title,
@@ -567,7 +722,9 @@ export class XExtractor implements ContentExtractor {
       extractionStatus: "ok",
       authorHandle: input.authorHandle,
       statusId: input.statusRef.statusId,
-      mediaUrls: input.mediaUrls.length > 0 ? input.mediaUrls : undefined
+      mediaUrls: linkOnly
+        ? [...new Set([...(input.mediaUrls || []), ...linkTargets])]
+        : (input.mediaUrls.length > 0 ? input.mediaUrls : undefined)
     };
   }
 
@@ -594,10 +751,12 @@ export class XExtractor implements ContentExtractor {
       const expandedLinks = [...new Set(await Promise.all(rawLinks.map((url) => this.expandUrl(url))))].filter(
         (url): url is string => Boolean(url && !url.startsWith("https://t.co/"))
       );
-      const linkOnly = isMostlyUrlText(tweetText) && expandedLinks.length > 0;
+      const prefetchedLinks = [...new Set((input.linkedPages ?? []).map((page) => page.url))];
+      const linkOnly = isMostlyUrlText(tweetText) && (expandedLinks.length > 0 || prefetchedLinks.length > 0);
 
-      if (linkOnly) {
-        const linkedPageContent = await this.tryLinkedPageContent(expandedLinks);
+    if (linkOnly) {
+        const linkedPageContent = await this.tryPrefetchedLinkedPageContent(input.linkedPages) ??
+          await this.tryLinkedPageContent(expandedLinks);
         if (linkedPageContent) {
           return {
             title: linkedPageContent.extracted.title,
@@ -611,15 +770,16 @@ export class XExtractor implements ContentExtractor {
             extractionStatus: "ok",
             authorHandle,
             statusId: statusRef.statusId,
-            mediaUrls: [...new Set([...(mediaUrls || []), ...expandedLinks])]
+            mediaUrls: [...new Set([...(mediaUrls || []), ...expandedLinks, ...prefetchedLinks])]
           };
         }
       }
 
+      const linkTargets = [...new Set([...expandedLinks, ...prefetchedLinks])];
       const enrichedContentHtml = linkOnly
-        ? `${tweetContent?.html ?? `<p>${escapeHtml(tweetText)}</p>`}${renderExpandedLinksBlock(expandedLinks)}`
+        ? `${tweetContent?.html ?? `<p>${escapeHtml(tweetText)}</p>`}${renderExpandedLinksBlock(linkTargets)}`
         : tweetContent?.html ?? `<p>${escapeHtml(tweetText)}</p>`;
-      const excerpt = linkOnly ? expandedLinks.join(" ") : tweetText;
+      const excerpt = linkOnly ? linkTargets.join(" ") : tweetText;
 
       return {
         title: buildTitle({
@@ -636,7 +796,7 @@ export class XExtractor implements ContentExtractor {
         authorHandle,
         statusId: statusRef.statusId,
         mediaUrls: linkOnly
-          ? [...new Set([...(mediaUrls || []), ...expandedLinks])]
+          ? [...new Set([...(mediaUrls || []), ...linkTargets])]
           : (mediaUrls.length > 0 ? mediaUrls : undefined)
       };
     }
@@ -647,7 +807,8 @@ export class XExtractor implements ContentExtractor {
       statusRef,
       authorHandle,
       publishedAt: publishedAt ?? undefined,
-      mediaUrls
+      mediaUrls,
+      linkedPages: input.linkedPages
     });
     if (oEmbedFallback) {
       return oEmbedFallback;

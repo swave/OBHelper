@@ -21,10 +21,12 @@ describe("CdpFetcher", () => {
     const pageUrl = vi.fn(() => "https://x.com/test/status/1");
     const closePage = vi.fn(async () => undefined);
     const waitForSelector = vi.fn(async () => undefined);
+    const evaluate = vi.fn(async () => []);
 
     const newPage = vi.fn(async () => ({
       goto,
       waitForSelector,
+      evaluate,
       content,
       url: pageUrl,
       close: closePage
@@ -100,9 +102,11 @@ describe("CdpFetcher", () => {
     const pageUrl = vi.fn(() => "https://x.com/test/status/1");
     const closePage = vi.fn(async () => undefined);
     const waitForSelector = vi.fn(async () => undefined);
+    const evaluate = vi.fn(async () => []);
     const newPage = vi.fn(async () => ({
       goto,
       waitForSelector,
+      evaluate,
       content,
       url: pageUrl,
       close: closePage
@@ -136,8 +140,157 @@ describe("CdpFetcher", () => {
     expect(fetchCdpVersion).toHaveBeenCalledWith("http://127.0.0.1:9222", 12_345);
     expect(connectOverCDP).toHaveBeenNthCalledWith(1, "http://127.0.0.1:9222");
     expect(connectOverCDP).toHaveBeenNthCalledWith(2, "ws://127.0.0.1:9222/devtools/browser/mock-id");
-    expect(waitForSelector).toHaveBeenCalledTimes(1);
+    expect(waitForSelector.mock.calls.length).toBeGreaterThan(0);
     expect(result.statusCode).toBe(200);
     expect(closeBrowser).toHaveBeenCalledTimes(1);
+  });
+
+  it("captures linked page html via live browser session", async () => {
+    const mainGoto = vi.fn(async () => ({
+      status: () => 200
+    }));
+    const mainWaitForSelector = vi.fn(async () => undefined);
+    const mainEvaluate = vi.fn(async () => ["https://t.co/example"]);
+    const mainContent = vi.fn(async () => "<html><body>tweet</body></html>");
+    const mainUrl = vi.fn(() => "https://x.com/test/status/1");
+    const mainClose = vi.fn(async () => undefined);
+    const mainPage = {
+      goto: mainGoto,
+      waitForSelector: mainWaitForSelector,
+      evaluate: mainEvaluate,
+      content: mainContent,
+      url: mainUrl,
+      close: mainClose
+    };
+
+    const linkGoto = vi.fn(async () => ({
+      status: () => 200
+    }));
+    const linkWaitForSelector = vi.fn(async () => undefined);
+    const linkEvaluate = vi.fn(async () => ({
+      title: "Linked Title",
+      text: "Linked body from live DOM."
+    }));
+    const linkContent = vi.fn(async () => "<html><body><article><h1>Linked Title</h1><p>Linked body.</p></article></body></html>");
+    const linkUrl = vi.fn(() => "https://example.com/linked");
+    const linkClose = vi.fn(async () => undefined);
+    const linkPage = {
+      goto: linkGoto,
+      waitForSelector: linkWaitForSelector,
+      evaluate: linkEvaluate,
+      content: linkContent,
+      url: linkUrl,
+      close: linkClose
+    };
+
+    const newPage = vi
+      .fn()
+      .mockResolvedValueOnce(mainPage)
+      .mockResolvedValueOnce(linkPage);
+
+    const closeBrowser = vi.fn(async () => undefined);
+    const connectOverCDP = vi.fn(async () => ({
+      contexts: () => [{ newPage }],
+      close: closeBrowser
+    }));
+    const loadPlaywright = vi.fn(async () => ({
+      chromium: {
+        connectOverCDP
+      }
+    }));
+
+    const fetcher = new CdpFetcher(loadPlaywright, async () => undefined);
+    const result = await fetcher.fetch({
+      url: "https://x.com/test/status/1",
+      cdpEndpoint: "http://127.0.0.1:9222",
+      timeoutMs: 12_345
+    });
+
+    expect(linkGoto).toHaveBeenCalledWith("https://t.co/example", {
+      timeout: 12_345,
+      waitUntil: "domcontentloaded"
+    });
+    expect(result.linkedPages).toEqual([
+      {
+        url: "https://example.com/linked",
+        html: "<html><body><article><h1>Linked Title</h1><p>Linked body.</p></article></body></html>",
+        title: "Linked Title",
+        text: "Linked body from live DOM."
+      }
+    ]);
+    expect(linkClose).toHaveBeenCalledTimes(1);
+    expect(mainClose).toHaveBeenCalledTimes(1);
+    expect(closeBrowser).toHaveBeenCalledTimes(1);
+  });
+
+  it("captures linked x article pages via t.co redirects", async () => {
+    const mainGoto = vi.fn(async () => ({
+      status: () => 200
+    }));
+    const mainWaitForSelector = vi.fn(async () => undefined);
+    const mainEvaluate = vi.fn(async () => ["https://t.co/example"]);
+    const mainContent = vi.fn(async () => "<html><body>tweet</body></html>");
+    const mainUrl = vi.fn(() => "https://x.com/test/status/1");
+    const mainClose = vi.fn(async () => undefined);
+    const mainPage = {
+      goto: mainGoto,
+      waitForSelector: mainWaitForSelector,
+      evaluate: mainEvaluate,
+      content: mainContent,
+      url: mainUrl,
+      close: mainClose
+    };
+
+    const linkGoto = vi.fn(async () => ({
+      status: () => 200
+    }));
+    const linkWaitForSelector = vi.fn(async () => undefined);
+    const linkEvaluate = vi.fn(async () => ({
+      title: "Up Next: The One-Person Million-Dollar Company / X",
+      text: "Up Next: The One-Person Million-Dollar Company\n\nBody from x article snapshot."
+    }));
+    const linkContent = vi.fn(async () => "<html><body><article><h1>X Article</h1><p>Body.</p></article></body></html>");
+    const linkUrl = vi.fn(() => "https://x.com/test/article/12345");
+    const linkClose = vi.fn(async () => undefined);
+    const linkPage = {
+      goto: linkGoto,
+      waitForSelector: linkWaitForSelector,
+      evaluate: linkEvaluate,
+      content: linkContent,
+      url: linkUrl,
+      close: linkClose
+    };
+
+    const newPage = vi
+      .fn()
+      .mockResolvedValueOnce(mainPage)
+      .mockResolvedValueOnce(linkPage);
+
+    const closeBrowser = vi.fn(async () => undefined);
+    const connectOverCDP = vi.fn(async () => ({
+      contexts: () => [{ newPage }],
+      close: closeBrowser
+    }));
+    const loadPlaywright = vi.fn(async () => ({
+      chromium: {
+        connectOverCDP
+      }
+    }));
+
+    const fetcher = new CdpFetcher(loadPlaywright, async () => undefined);
+    const result = await fetcher.fetch({
+      url: "https://x.com/test/status/1",
+      cdpEndpoint: "http://127.0.0.1:9222",
+      timeoutMs: 12_345
+    });
+
+    expect(result.linkedPages).toEqual([
+      {
+        url: "https://x.com/test/article/12345",
+        html: "<html><body><article><h1>X Article</h1><p>Body.</p></article></body></html>",
+        title: "Up Next: The One-Person Million-Dollar Company / X",
+        text: "Up Next: The One-Person Million-Dollar Company\n\nBody from x article snapshot."
+      }
+    ]);
   });
 });

@@ -10,12 +10,20 @@ export interface FetchOptions {
   headers?: Record<string, string>;
 }
 
+export interface FetchLinkedPage {
+  url: string;
+  html: string;
+  title?: string;
+  text?: string;
+}
+
 export interface FetchResult {
   requestedUrl: string;
   finalUrl: string;
   html: string;
   statusCode: number;
   fetchedAt: string;
+  linkedPages?: FetchLinkedPage[];
 }
 
 export interface ExtractedMainContent {

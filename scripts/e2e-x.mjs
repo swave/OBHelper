@@ -46,12 +46,21 @@ async function verifyCdpEndpoint(endpoint) {
   }
 
   const probeUrl = `${endpoint.replace(/\/+$/, "")}/json/version`;
-  const response = await fetch(probeUrl, {
-    headers: {
-      accept: "application/json"
-    },
-    signal: AbortSignal.timeout(5_000)
-  });
+  let response;
+  try {
+    response = await fetch(probeUrl, {
+      headers: {
+        accept: "application/json"
+      },
+      signal: AbortSignal.timeout(5_000)
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `CDP endpoint probe failed: ${probeUrl} (${detail}). Start Chrome with --remote-debugging-port=9222 and ensure it is reachable from this shell.`
+    );
+  }
+
   if (!response.ok) {
     throw new Error(`CDP endpoint probe failed: ${probeUrl} -> ${response.status}`);
   }
