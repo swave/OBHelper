@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { detectSourcePlatform, isXStatusUrl } from "./url-source.js";
+import { detectSourcePlatform, isWeixinArticleUrl, isXStatusUrl } from "./url-source.js";
 import type { PipelineInput, PipelineResult } from "./types.js";
 import { toNormalizedDocument } from "../markdown/render.js";
 import type { Fetcher } from "../fetch/fetcher.js";
@@ -38,6 +38,13 @@ export async function runPipeline(
     throw new ObfronterError(
       "X_STATUS_URL_REQUIRED",
       `X provider currently supports only status URLs: ${parsedUrl.toString()}`
+    );
+  }
+
+  if (sourcePlatform === "weixin" && !isWeixinArticleUrl(parsedUrl)) {
+    throw new ObfronterError(
+      "WEIXIN_ARTICLE_URL_REQUIRED",
+      `Weixin provider currently supports only article URLs: ${parsedUrl.toString()}`
     );
   }
 

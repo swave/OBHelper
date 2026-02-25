@@ -103,4 +103,24 @@ describe("runPipeline", () => {
       )
     ).rejects.toThrow("X provider currently supports only status URLs");
   });
+
+  it("rejects non-article weixin URLs", async () => {
+    await expect(() =>
+      runPipeline(
+        {
+          url: "https://mp.weixin.qq.com/mp/profile_ext?action=home",
+          write: {
+            vaultPath: "/vault",
+            subdirectory: "Inbox"
+          },
+          fetch: {}
+        },
+        {
+          fetcher: new FakeFetcher(),
+          extractors: new FakeRegistry(),
+          writer: new FakeWriter()
+        }
+      )
+    ).rejects.toThrow("Weixin provider currently supports only article URLs");
+  });
 });

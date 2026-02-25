@@ -63,3 +63,45 @@ export function parseXStatusRef(url: URL): XStatusRef | undefined {
 export function isXStatusUrl(url: URL): boolean {
   return parseXStatusRef(url) !== undefined;
 }
+
+export interface WeixinArticleRef {
+  biz?: string;
+  mid?: string;
+  idx?: string;
+  sn?: string;
+}
+
+function parseWeixinArticleRefFromUrl(url: URL): WeixinArticleRef | undefined {
+  if (!WEIXIN_HOSTS.has(url.hostname.toLowerCase())) {
+    return undefined;
+  }
+
+  const path = url.pathname.replace(/\/+$/, "");
+  if (path !== "/s") {
+    return undefined;
+  }
+
+  return {
+    biz: url.searchParams.get("__biz") ?? undefined,
+    mid: url.searchParams.get("mid") ?? undefined,
+    idx: url.searchParams.get("idx") ?? undefined,
+    sn: url.searchParams.get("sn") ?? undefined
+  };
+}
+
+function hasWeixinArticleIdentity(ref: WeixinArticleRef): boolean {
+  return Boolean(ref.biz || ref.mid || ref.idx || ref.sn);
+}
+
+export function parseWeixinArticleRef(url: URL): WeixinArticleRef | undefined {
+  const parsed = parseWeixinArticleRefFromUrl(url);
+  if (!parsed || !hasWeixinArticleIdentity(parsed)) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+export function isWeixinArticleUrl(url: URL): boolean {
+  return parseWeixinArticleRef(url) !== undefined;
+}

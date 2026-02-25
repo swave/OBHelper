@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { detectSourcePlatform, isXStatusUrl, parseXStatusRef } from "../../src/core/url-source.js";
+import {
+  detectSourcePlatform,
+  isWeixinArticleUrl,
+  isXStatusUrl,
+  parseWeixinArticleRef,
+  parseXStatusRef
+} from "../../src/core/url-source.js";
 
 describe("detectSourcePlatform", () => {
   it("detects x domains", () => {
@@ -34,5 +40,27 @@ describe("detectSourcePlatform", () => {
   it("accepts only x status URLs in x-specific parser", () => {
     expect(isXStatusUrl(new URL("https://x.com/someone/status/12345"))).toBe(true);
     expect(isXStatusUrl(new URL("https://x.com/someone"))).toBe(false);
+  });
+
+  it("parses weixin article url details", () => {
+    expect(
+      parseWeixinArticleRef(
+        new URL("https://mp.weixin.qq.com/s?__biz=Mzkx&mid=2247483647&idx=1&sn=abcd1234")
+      )
+    ).toEqual({
+      biz: "Mzkx",
+      mid: "2247483647",
+      idx: "1",
+      sn: "abcd1234"
+    });
+  });
+
+  it("accepts only weixin article URLs in weixin-specific parser", () => {
+    expect(
+      isWeixinArticleUrl(
+        new URL("https://mp.weixin.qq.com/s?__biz=Mzkx&mid=2247483647&idx=1&sn=abcd1234")
+      )
+    ).toBe(true);
+    expect(isWeixinArticleUrl(new URL("https://mp.weixin.qq.com/mp/profile_ext?action=home"))).toBe(false);
   });
 });

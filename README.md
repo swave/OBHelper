@@ -59,3 +59,8 @@ Some pages require login, anti-bot checks, or dynamic rendering. The scaffold in
 - Supports only X status URLs (`https://x.com/<handle>/status/<id>` or `/i/web/status/<id>`).
 - Defaults to browser mode for X to improve extraction stability.
 - If extraction is blocked, it writes a blocked note instead of silently failing.
+
+## Weixin Provider (v1)
+- Supports only article URLs shaped like `https://mp.weixin.qq.com/s?...` with article query identifiers.
+- Extracts title, author, publish time, main content, and image URLs into markdown/frontmatter.
+- If the article is deleted or blocked, it writes a blocked note with reason and source URL.
