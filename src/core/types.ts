@@ -17,6 +17,12 @@ export interface FetchLinkedPage {
   text?: string;
 }
 
+export interface CapturedCodeBlock {
+  text: string;
+  beforeText?: string;
+  afterText?: string;
+}
+
 export interface FetchResult {
   requestedUrl: string;
   finalUrl: string;
@@ -24,6 +30,7 @@ export interface FetchResult {
   statusCode: number;
   fetchedAt: string;
   linkedPages?: FetchLinkedPage[];
+  capturedCodeBlocks?: CapturedCodeBlock[];
 }
 
 export interface ExtractedMainContent {

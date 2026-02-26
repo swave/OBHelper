@@ -139,4 +139,41 @@ describe("toNormalizedDocument", () => {
     expect(normalized.markdownBody).toContain("```");
     expect(normalized.markdownBody).toContain("my-project/\n├── AGENTS.md       # Agent 入口\n└── repos/");
   });
+
+  it("does not wrap block lists with literal strong markers when b encloses block elements", () => {
+    const normalized = toNormalizedDocument({
+      sourceUrl: "https://mp.weixin.qq.com/s/mock-strong-list",
+      sourcePlatform: "weixin",
+      fetchedAt: "2026-02-26T12:00:00.000Z",
+      extracted: {
+        title: "Weixin Strong Wrapper",
+        contentHtml:
+          "<section><b><ul><li><p>可以被自然语言描述</p></li><li><p>可以被符号逻辑固化</p></li></ul><ul><li><p>并且能够交付确定性的结果。</p></li></ul></b></section>",
+        extractionStatus: "ok"
+      }
+    });
+
+    expect(normalized.markdownBody).not.toContain("\n**\n");
+    expect(normalized.markdownBody).not.toContain("\n**\n\n-");
+    expect(normalized.markdownBody).toContain("-   可以被自然语言描述");
+    expect(normalized.markdownBody).toContain("-   可以被符号逻辑固化");
+    expect(normalized.markdownBody).toContain("-   并且能够交付确定性的结果。");
+  });
+
+  it("renders terminal-style pre blocks with div lines as clean fenced code and drops copy button text", () => {
+    const normalized = toNormalizedDocument({
+      sourceUrl: "https://example.com/terminal",
+      sourcePlatform: "generic",
+      fetchedAt: "2026-02-26T12:00:00.000Z",
+      extracted: {
+        title: "Terminal Block",
+        contentHtml:
+          "<div><div><button>Copy</button></div><pre><div><span>mkdir agent</span></div><div><span>cd agent</span></div><div><span>bun init -y</span></div></pre></div>",
+        extractionStatus: "ok"
+      }
+    });
+
+    expect(normalized.markdownBody).not.toContain("Copy");
+    expect(normalized.markdownBody).toContain("```\nmkdir agent\ncd agent\nbun init -y\n```");
+  });
 });

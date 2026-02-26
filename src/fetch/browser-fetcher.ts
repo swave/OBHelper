@@ -1,7 +1,7 @@
 import { ObfronterError } from "../core/errors.js";
 import type { BrowserChannel, FetchOptions, FetchResult } from "../core/types.js";
 import type { Fetcher } from "./fetcher.js";
-import { waitForXStatusContentReady } from "./x-ready.js";
+import { waitForFetchedPageContentReady } from "./x-ready.js";
 
 interface PlaywrightLike {
   chromium: {
@@ -70,7 +70,7 @@ export class BrowserFetcher implements Fetcher {
         timeout: timeoutMs,
         waitUntil: "domcontentloaded"
       });
-      await waitForXStatusContentReady({
+      await waitForFetchedPageContentReady({
         page,
         requestedUrl: options.url,
         timeoutMs

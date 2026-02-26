@@ -77,4 +77,73 @@ describe("GenericExtractor", () => {
     expect(result.contentHtml).not.toContain("Noise that should be removed.");
     expect(result.contentHtml).not.toContain("Site-wide Links");
   });
+
+  it("appends recovered code blocks when extracted content has none", async () => {
+    const html = [
+      "<!doctype html>",
+      "<html><head><title>Agent</title></head><body>",
+      "<article>",
+      "<h1>Agent</h1>",
+      "<p>Intro paragraph.</p>",
+      "<p>Another paragraph.</p>",
+      "</article>",
+      "</body></html>"
+    ].join("");
+
+    const extractor = new GenericExtractor();
+    const result = await extractor.extract({
+      requestedUrl: "https://example.com/agent",
+      finalUrl: "https://example.com/agent",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-01-01T10:00:00.000Z",
+      capturedCodeBlocks: [
+        {
+          text: "mkdir agent\ncd agent\nbun init -y"
+        }
+      ]
+    });
+
+    expect(result.contentHtml).toContain("Recovered Code Blocks");
+    expect(result.contentHtml).toContain("mkdir agent");
+    expect(result.contentHtml).toContain("bun init -y");
+    expect(result.contentHtml).toContain("<pre><code>");
+  });
+
+  it("inserts recovered code blocks near captured context anchors", async () => {
+    const html = [
+      "<!doctype html>",
+      "<html><head><title>Agent</title></head><body>",
+      "<article>",
+      "<h1>Agent</h1>",
+      "<p>Let's start by creating our project.</p>",
+      "<p>Now that we have everything installed, let's start coding our agent out.</p>",
+      "</article>",
+      "</body></html>"
+    ].join("");
+
+    const extractor = new GenericExtractor();
+    const result = await extractor.extract({
+      requestedUrl: "https://example.com/agent",
+      finalUrl: "https://example.com/agent",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-01-01T10:00:00.000Z",
+      capturedCodeBlocks: [
+        {
+          text: "mkdir agent\ncd agent\nbun init -y",
+          beforeText: "Let's start by creating our project.",
+          afterText: "Now that we have everything installed, let's start coding our agent out."
+        }
+      ]
+    });
+
+    const beforeIndex = result.contentHtml.indexOf("Let's start by creating our project.");
+    const codeIndex = result.contentHtml.indexOf("mkdir agent");
+    const afterIndex = result.contentHtml.indexOf("Now that we have everything installed");
+
+    expect(codeIndex).toBeGreaterThan(beforeIndex);
+    expect(afterIndex).toBeGreaterThan(codeIndex);
+    expect(result.contentHtml).not.toContain("Recovered Code Blocks");
+  });
 });

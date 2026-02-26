@@ -1,8 +1,8 @@
 import { ObfronterError } from "../core/errors.js";
 import { detectSourcePlatform, isXStatusUrl } from "../core/url-source.js";
-import type { FetchLinkedPage, FetchOptions, FetchResult } from "../core/types.js";
+import type { CapturedCodeBlock, FetchLinkedPage, FetchOptions, FetchResult } from "../core/types.js";
 import type { Fetcher } from "./fetcher.js";
-import { waitForXStatusContentReady } from "./x-ready.js";
+import { waitForFetchedPageContentReady } from "./x-ready.js";
 
 interface CdpPageLike {
   goto: (
@@ -41,6 +41,160 @@ interface CdpVersionResponse {
 type FetchCdpVersion = (endpointURL: string, timeoutMs: number) => Promise<CdpVersionResponse | undefined>;
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+function normalizeCapturedCodeText(raw: string): string {
+  return raw
+    .replace(/\r\n?/g, "\n")
+    .replace(/\u00A0/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function normalizeAnchorText(raw: string | undefined): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+async function captureCodeBlocksFromPage(page: CdpPageLike): Promise<CapturedCodeBlock[]> {
+  try {
+    const snapshot = await page.evaluate(() => {
+      const LINE_CONTAINER_TAGS = new Set(["DIV", "P", "LI"]);
+      const ANCHOR_SELECTOR = "h1,h2,h3,h4,h5,h6,p,li,blockquote";
+      const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
+
+      const toText = (element: Element): string => {
+        const clone = element.cloneNode(true) as Element;
+        const directChildren = Array.from(clone.children);
+        const looksLikeLineContainer =
+          directChildren.length > 0 &&
+          directChildren.every((child) => LINE_CONTAINER_TAGS.has(child.tagName.toUpperCase()));
+        if (looksLikeLineContainer) {
+          for (let index = 0; index < directChildren.length; index += 1) {
+            if (index < directChildren.length - 1) {
+              directChildren[index].insertAdjacentText("afterend", "\n");
+            }
+          }
+        }
+
+        for (const br of Array.from(clone.querySelectorAll("br"))) {
+          br.replaceWith("\n");
+        }
+
+        return clone.textContent ?? "";
+      };
+
+      const findContextAnchor = (target: Element): { beforeText?: string; afterText?: string } => {
+        const blocks = Array.from(document.querySelectorAll(ANCHOR_SELECTOR));
+        let beforeText: string | undefined;
+        let afterText: string | undefined;
+        for (const block of blocks) {
+          if (target.contains(block) || block.contains(target)) {
+            continue;
+          }
+
+          const blockText = normalizeText(block.textContent ?? "");
+          if (blockText.length < 8) {
+            continue;
+          }
+
+          const position = block.compareDocumentPosition(target);
+          if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+            beforeText = blockText;
+            continue;
+          }
+
+          if (!afterText && (position & Node.DOCUMENT_POSITION_PRECEDING)) {
+            afterText = blockText;
+            break;
+          }
+        }
+
+        return {
+          beforeText,
+          afterText
+        };
+      };
+
+      const blocks: Array<{ text: string; beforeText?: string; afterText?: string }> = [];
+      const seen = new Set<string>();
+      const candidates = Array.from(document.querySelectorAll("pre, [data-testid='markdown-code-block']"));
+      for (const node of candidates) {
+        const codeNode = node.matches("pre") ? (node.querySelector("code") ?? node) : node;
+        const raw = toText(codeNode as Element)
+          .replace(/\r\n?/g, "\n")
+          .replace(/\u00A0/g, " ")
+          .trim();
+        if (raw.length < 10) {
+          continue;
+        }
+        if (!raw.includes("\n") && raw.split(/\s+/).length < 3) {
+          continue;
+        }
+
+        if (!seen.has(raw)) {
+          seen.add(raw);
+          const context = findContextAnchor(node);
+          blocks.push({
+            text: raw,
+            ...(context.beforeText ? { beforeText: context.beforeText } : {}),
+            ...(context.afterText ? { afterText: context.afterText } : {})
+          });
+        }
+      }
+
+      return blocks;
+    });
+
+    if (!Array.isArray(snapshot)) {
+      return [];
+    }
+
+    const unique = new Map<string, CapturedCodeBlock>();
+    for (const entry of snapshot) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+
+      const rawText = Reflect.get(entry, "text");
+      if (typeof rawText !== "string") {
+        continue;
+      }
+
+      const normalized = normalizeCapturedCodeText(rawText);
+      if (normalized.length < 10) {
+        continue;
+      }
+      if (!normalized.includes("\n") && normalized.split(/\s+/).length < 3) {
+        continue;
+      }
+
+      const beforeText = normalizeAnchorText(
+        typeof Reflect.get(entry, "beforeText") === "string"
+          ? (Reflect.get(entry, "beforeText") as string)
+          : undefined
+      );
+      const afterText = normalizeAnchorText(
+        typeof Reflect.get(entry, "afterText") === "string"
+          ? (Reflect.get(entry, "afterText") as string)
+          : undefined
+      );
+
+      unique.set(normalized, {
+        text: normalized,
+        ...(beforeText ? { beforeText } : {}),
+        ...(afterText ? { afterText } : {})
+      });
+    }
+
+    return [...unique.values()];
+  } catch {
+    return [];
+  }
+}
 
 async function defaultLoadPlaywright(): Promise<PlaywrightLike> {
   const moduleName = "playwright";
@@ -811,7 +965,7 @@ export class CdpFetcher implements Fetcher {
           url: options.url,
           timeoutMs
         });
-        await waitForXStatusContentReady({
+        await waitForFetchedPageContentReady({
           page,
           requestedUrl: options.url,
           timeoutMs
@@ -822,6 +976,7 @@ export class CdpFetcher implements Fetcher {
           requestedUrl: options.url,
           timeoutMs
         });
+        const capturedCodeBlocks = await captureCodeBlocksFromPage(page);
 
         return {
           requestedUrl: options.url,
@@ -829,6 +984,7 @@ export class CdpFetcher implements Fetcher {
           html: await page.content(),
           statusCode: response?.status() ?? 200,
           fetchedAt: new Date().toISOString(),
+          ...(capturedCodeBlocks.length > 0 ? { capturedCodeBlocks } : {}),
           ...(linkedPages.length > 0 ? { linkedPages } : {})
         };
       } finally {

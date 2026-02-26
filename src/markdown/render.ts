@@ -6,11 +6,27 @@ function normalizeCodeBlockText(value: string): string {
   return value.replace(/\r\n?/g, "\n").replace(/\u00A0/g, " ");
 }
 
+const CODE_LINE_CONTAINER_TAGS = new Set(["DIV", "P", "LI"]);
+
 function extractCodeText(node: HTMLElement): string {
   const clone = node.cloneNode(true) as Node;
   const elementClone = clone as Element;
   if (typeof elementClone.querySelectorAll !== "function") {
     return clone.textContent ?? "";
+  }
+
+  const directChildren = Array.from(elementClone.children);
+  const looksLikeLineContainer =
+    directChildren.length > 0 &&
+    directChildren.every((child) => CODE_LINE_CONTAINER_TAGS.has(child.tagName.toUpperCase()));
+  if (looksLikeLineContainer) {
+    for (let index = 0; index < directChildren.length; index += 1) {
+      if (index === directChildren.length - 1) {
+        continue;
+      }
+
+      directChildren[index].insertAdjacentText("afterend", "\n");
+    }
   }
 
   for (const br of Array.from(elementClone.querySelectorAll("br"))) {
@@ -121,6 +137,51 @@ function shouldPromoteCodeToBlock(input: {
   return false;
 }
 
+const BLOCK_LEVEL_TAGS = new Set([
+  "ADDRESS",
+  "ARTICLE",
+  "ASIDE",
+  "BLOCKQUOTE",
+  "DIV",
+  "DL",
+  "FIELDSET",
+  "FIGCAPTION",
+  "FIGURE",
+  "FOOTER",
+  "FORM",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "HEADER",
+  "HR",
+  "LI",
+  "MAIN",
+  "NAV",
+  "OL",
+  "P",
+  "PRE",
+  "SECTION",
+  "TABLE",
+  "UL"
+]);
+
+function hasBlockDescendant(node: HTMLElement): boolean {
+  for (const element of Array.from(node.querySelectorAll("*"))) {
+    if (BLOCK_LEVEL_TAGS.has(element.tagName.toUpperCase())) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isElementNode(node: Node): node is Element {
+  return node.nodeType === 1;
+}
+
 function sanitizeTableCellContent(value: string): string {
   const normalized = value
     .replace(/\r\n?/g, "\n")
@@ -227,6 +288,35 @@ function createTurndown(): TurndownService {
       }
 
       return renderInlineCode(codeText);
+    }
+  });
+
+  service.addRule("markdown-ignore-button", {
+    filter: "button",
+    replacement: () => ""
+  });
+
+  service.addRule("markdown-strong-safe", {
+    filter: (node) => {
+      if (!isElementNode(node)) {
+        return false;
+      }
+
+      const tag = node.tagName.toUpperCase();
+      return tag === "B" || tag === "STRONG";
+    },
+    replacement: (content, node) => {
+      const strongNode = node as HTMLElement;
+      if (hasBlockDescendant(strongNode) || content.includes("\n\n")) {
+        return content;
+      }
+
+      const trimmed = content.trim();
+      if (trimmed.length === 0) {
+        return "";
+      }
+
+      return `**${trimmed}**`;
     }
   });
 
