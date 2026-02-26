@@ -502,9 +502,488 @@ function cleanLinkedTitle(rawTitle: string | undefined): string | undefined {
   return cleaned;
 }
 
+function stripStyleBlocks(html: string): string {
+  return html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+}
+
 function parseCodeLanguage(line: string): string | undefined {
   const normalized = line.trim().toLowerCase();
   return CODE_LANG_ALIASES[normalized];
+}
+
+function parseImageMarker(line: string): string | undefined {
+  const match = line.trim().match(/^\[\[IMAGE:(https?:\/\/[^\]]+)\]\]$/i);
+  return match?.[1];
+}
+
+function hasImageMarker(lines: string[]): boolean {
+  return lines.some((line) => Boolean(parseImageMarker(line)));
+}
+
+function parseFirstUrlFromSrcset(srcset: string | null): string | undefined {
+  if (!srcset) {
+    return undefined;
+  }
+
+  const firstCandidate = srcset
+    .split(",")
+    .map((entry) => entry.trim().split(/\s+/)[0])
+    .find((entry) => Boolean(entry));
+  return firstCandidate || undefined;
+}
+
+function extractSnapshotImageUrl(node: Element, pageUrl: URL): string | undefined {
+  const testId = node.closest("[data-testid]")?.getAttribute("data-testid")?.toLowerCase() ?? "";
+  const rawCandidates = [
+    node.getAttribute("src"),
+    node.getAttribute("data-src"),
+    node.getAttribute("data-image-url"),
+    parseFirstUrlFromSrcset(node.getAttribute("srcset"))
+  ];
+
+  for (const candidate of rawCandidates) {
+    if (!candidate || candidate.trim().length === 0) {
+      continue;
+    }
+
+    const resolved = parseAbsoluteUrl(candidate.trim(), pageUrl);
+    if (resolved && (
+      /twimg\.com\/media/i.test(resolved) ||
+      testId === "tweetphoto"
+    )) {
+      return resolved;
+    }
+  }
+
+  return undefined;
+}
+
+function hasBoldFontWeight(style: string): boolean {
+  if (!/font-weight\s*:/i.test(style)) {
+    return false;
+  }
+
+  if (/font-weight\s*:\s*(bold|bolder)/i.test(style)) {
+    return true;
+  }
+
+  const numericMatch = style.match(/font-weight\s*:\s*(\d{3})/i);
+  if (!numericMatch) {
+    return false;
+  }
+
+  const weight = Number.parseInt(numericMatch[1], 10);
+  return Number.isFinite(weight) && weight >= 600;
+}
+
+function isRichListItemNode(node: Element): boolean {
+  if (node.tagName.toLowerCase() === "li") {
+    return true;
+  }
+
+  return node.classList.contains("longform-unordered-list-item") ||
+    node.classList.contains("longform-ordered-list-item");
+}
+
+function getRichListTag(node: Element): "ul" | "ol" {
+  if (node.classList.contains("longform-ordered-list-item")) {
+    return "ol";
+  }
+
+  if (node.classList.contains("longform-unordered-list-item")) {
+    return "ul";
+  }
+
+  return node.parentElement?.tagName.toLowerCase() === "ol" ? "ol" : "ul";
+}
+
+function isNestedInsideRichListItem(node: Element): boolean {
+  const nearestListItem = node.closest("li, .longform-unordered-list-item, .longform-ordered-list-item");
+  return Boolean(nearestListItem && nearestListItem !== node);
+}
+
+function normalizeDraftInlineHtml(node: Element): string {
+  const clone = node.cloneNode(true) as Element;
+  const allElements = [clone, ...clone.querySelectorAll("*")];
+
+  for (const element of allElements) {
+    const tagName = element.tagName.toLowerCase();
+    const style = element.getAttribute("style") ?? "";
+    const isBold = hasBoldFontWeight(style);
+    if (tagName === "span") {
+      if (isBold) {
+        const strong = clone.ownerDocument.createElement("strong");
+        strong.innerHTML = element.innerHTML;
+        if (element === clone) {
+          element.replaceChildren(strong);
+        } else {
+          element.replaceWith(strong);
+        }
+        continue;
+      }
+
+      if (element !== clone) {
+        element.replaceWith(...Array.from(element.childNodes));
+      }
+      continue;
+    }
+
+    if (isBold && tagName !== "strong" && tagName !== "b") {
+      const strong = clone.ownerDocument.createElement("strong");
+      strong.innerHTML = element.innerHTML;
+      element.replaceChildren(strong);
+    }
+
+    for (const attr of element.getAttributeNames()) {
+      if (tagName === "a" && attr.toLowerCase() === "href") {
+        continue;
+      }
+      if (tagName === "img" && (attr.toLowerCase() === "src" || attr.toLowerCase() === "alt")) {
+        continue;
+      }
+      element.removeAttribute(attr);
+    }
+  }
+
+  return clone.innerHTML.trim();
+}
+
+function unwrapSingleDraftBlockWrapper(html: string): string {
+  let unwrapped = html.trim();
+  for (let index = 0; index < 2; index += 1) {
+    if (/<\/(?:div|section)>\s*<(?:div|section)>/i.test(unwrapped)) {
+      break;
+    }
+    const match = unwrapped.match(/^<(div|section)>([\s\S]*)<\/\1>$/i);
+    if (!match) {
+      break;
+    }
+    unwrapped = match[2].trim();
+  }
+  return unwrapped;
+}
+
+function sanitizeHeadingInlineHtml(inputHtml: string, fallbackText: string): string {
+  const trimmed = inputHtml.trim();
+  if (trimmed.length === 0) {
+    return escapeHtml(normalizeWhitespace(fallbackText));
+  }
+
+  try {
+    const dom = new JSDOM(`<body><div id="heading-root">${trimmed}</div></body>`);
+    const root = dom.window.document.querySelector("#heading-root");
+    if (!root) {
+      return escapeHtml(normalizeWhitespace(fallbackText));
+    }
+
+    const blockSelector = "div, section, article, main, p, ul, ol, li, blockquote, pre, h1, h2, h3, h4, h5, h6";
+    for (let pass = 0; pass < 3; pass += 1) {
+      const blockNodes = [...root.querySelectorAll(blockSelector)];
+      if (blockNodes.length === 0) {
+        break;
+      }
+      for (const blockNode of blockNodes) {
+        blockNode.replaceWith(...Array.from(blockNode.childNodes));
+      }
+    }
+
+    const normalizedText = normalizeWhitespace(root.textContent ?? "");
+    if (normalizedText.length === 0) {
+      return escapeHtml(normalizeWhitespace(fallbackText));
+    }
+
+    // Keep headings as plain text to avoid markdown renderers showing literal ** markers.
+    return escapeHtml(normalizedText);
+  } catch {
+    return escapeHtml(normalizeWhitespace(fallbackText));
+  }
+}
+
+function tryExtractFromLinkedHtmlRich(page: FetchLinkedPage): ExtractedMainContent | undefined {
+  if (!isXArticleUrl(page.url) || !page.html || page.html.trim().length === 0) {
+    return undefined;
+  }
+
+  const sanitizedHtml = stripStyleBlocks(page.html);
+  let dom: JSDOM;
+  try {
+    dom = new JSDOM(sanitizedHtml, { url: page.url });
+  } catch {
+    return undefined;
+  }
+
+  const root = dom.window.document.querySelector("[data-testid='twitterArticleReadView']") ??
+    dom.window.document.querySelector("main article") ??
+    dom.window.document.querySelector("article") ??
+    dom.window.document.querySelector("main");
+  if (!root) {
+    return undefined;
+  }
+
+  let pageUrl: URL;
+  try {
+    pageUrl = new URL(page.url);
+  } catch {
+    return undefined;
+  }
+
+  const blocks = [...root.querySelectorAll(
+    "[data-testid='twitter-article-title'], [data-testid='tweetPhoto'] img, [data-testid='longformRichTextComponent'] li, [data-testid='longformRichTextComponent'] .longform-unordered-list-item, [data-testid='longformRichTextComponent'] .longform-ordered-list-item, [data-testid='longformRichTextComponent'] .longform-unstyled, [data-testid='longformRichTextComponent'] pre, [data-testid='markdown-code-block'] pre, h1, h2, h3, p, blockquote, li, .longform-unordered-list-item, .longform-ordered-list-item, .longform-unstyled, pre, img"
+  )]
+    .filter((node) => {
+      if (node.matches(".longform-unstyled") && isNestedInsideRichListItem(node)) {
+        return false;
+      }
+      if (node.tagName.toLowerCase() === "p" && isNestedInsideRichListItem(node)) {
+        return false;
+      }
+      return true;
+    });
+  if (blocks.length === 0) {
+    return undefined;
+  }
+
+  const contentParts: string[] = [];
+  const excerptParts: string[] = [];
+
+  for (let index = 0; index < blocks.length;) {
+    const node = blocks[index];
+    const tagName = node.tagName.toLowerCase();
+
+    if (tagName === "img") {
+      const imageUrl = extractSnapshotImageUrl(node, pageUrl);
+      if (imageUrl) {
+        contentParts.push(`<p><img src="${escapeHtml(imageUrl)}" alt="" /></p>`);
+      }
+      index += 1;
+      continue;
+    }
+
+    if (isRichListItemNode(node)) {
+      const listParent = node.parentElement;
+      const listTag = getRichListTag(node);
+      const items: string[] = [];
+      while (
+        index < blocks.length &&
+        isRichListItemNode(blocks[index]) &&
+        blocks[index].parentElement === listParent &&
+        getRichListTag(blocks[index]) === listTag
+      ) {
+        const itemNode = blocks[index];
+        const itemHtml = unwrapSingleDraftBlockWrapper(normalizeDraftInlineHtml(itemNode));
+        const itemText = normalizeWhitespace(itemNode.textContent ?? "");
+        if (itemText.length > 0) {
+          items.push(`<li>${itemHtml.length > 0 ? itemHtml : escapeHtml(itemText)}</li>`);
+          excerptParts.push(itemText);
+        }
+        index += 1;
+      }
+      if (items.length > 0) {
+        contentParts.push(`<${listTag}>${items.join("")}</${listTag}>`);
+      }
+      continue;
+    }
+
+    if (tagName === "pre") {
+      const codeText = node.textContent?.replace(/\r/g, "").trim() ?? "";
+      if (codeText.length > 0) {
+        contentParts.push(`<pre><code>${escapeHtml(codeText)}</code></pre>`);
+        excerptParts.push(codeText.slice(0, 200));
+      }
+      index += 1;
+      continue;
+    }
+
+    if (node.matches(".longform-unstyled") && isNestedInsideRichListItem(node)) {
+      index += 1;
+      continue;
+    }
+
+    const rawText = normalizeWhitespace(node.textContent ?? "");
+    if (rawText.length === 0) {
+      index += 1;
+      continue;
+    }
+
+    const unorderedMarkerMatch = rawText.match(/^-\s+(.+)$/);
+    const orderedMarkerMatch = rawText.match(/^\d+\.\s+(.+)$/);
+    if (unorderedMarkerMatch || orderedMarkerMatch) {
+      const ordered = Boolean(orderedMarkerMatch);
+      const markerPattern = ordered ? /^\s*\d+\.\s+/ : /^\s*-\s+/;
+      const listTag = ordered ? "ol" : "ul";
+      const items: string[] = [];
+
+      while (index < blocks.length) {
+        const listNode = blocks[index];
+        if (isRichListItemNode(listNode) || listNode.tagName.toLowerCase() === "img" || listNode.tagName.toLowerCase() === "pre") {
+          break;
+        }
+
+        const listText = normalizeWhitespace(listNode.textContent ?? "");
+        const isMatchingListLine = ordered
+          ? /^\d+\.\s+(.+)$/.test(listText)
+          : /^-\s+(.+)$/.test(listText);
+        if (!isMatchingListLine) {
+          break;
+        }
+
+        const listInlineHtml = unwrapSingleDraftBlockWrapper(normalizeDraftInlineHtml(listNode));
+        const itemHtml = listInlineHtml.replace(markerPattern, "").trim();
+        const itemText = listText.replace(markerPattern, "").trim();
+        if (itemText.length > 0) {
+          items.push(`<li>${itemHtml.length > 0 ? itemHtml : escapeHtml(itemText)}</li>`);
+          excerptParts.push(itemText);
+        }
+        index += 1;
+      }
+
+      if (items.length > 0) {
+        contentParts.push(`<${listTag}>${items.join("")}</${listTag}>`);
+        continue;
+      }
+    }
+
+    const inlineHtml = unwrapSingleDraftBlockWrapper(normalizeDraftInlineHtml(node));
+    const headingHtml = sanitizeHeadingInlineHtml(inlineHtml, rawText);
+    if (node.getAttribute("data-testid") === "twitter-article-title" || tagName === "h1") {
+      contentParts.push(`<h1>${headingHtml}</h1>`);
+    } else if (tagName === "h2" || tagName === "h3") {
+      contentParts.push(`<${tagName}>${headingHtml}</${tagName}>`);
+    } else if (tagName === "blockquote") {
+      contentParts.push(`<blockquote>${inlineHtml.length > 0 ? inlineHtml : escapeHtml(rawText)}</blockquote>`);
+    } else {
+      contentParts.push(`<p>${inlineHtml.length > 0 ? inlineHtml : escapeHtml(rawText)}</p>`);
+    }
+    excerptParts.push(rawText);
+    index += 1;
+  }
+
+  if (contentParts.length === 0) {
+    return undefined;
+  }
+
+  const hasNonTitleContent = contentParts.some((part) => !part.startsWith("<h1>"));
+  if (!hasNonTitleContent) {
+    return undefined;
+  }
+
+  const excerptText = normalizeWhitespace(excerptParts.join(" "));
+  if (excerptText.length < 40 || hasBlockedMarker(excerptText)) {
+    return undefined;
+  }
+
+  const titleFromArticle = normalizeWhitespace(
+    root.querySelector("[data-testid='twitter-article-title']")?.textContent ?? ""
+  );
+  const titleCandidate = cleanLinkedTitle(page.title) ??
+    (titleFromArticle.length > 0 ? titleFromArticle : undefined) ??
+    excerptParts[0]?.slice(0, 160);
+  if (!titleCandidate) {
+    return undefined;
+  }
+
+  return {
+    title: titleCandidate,
+    contentHtml: contentParts.join(""),
+    excerpt: excerptText.slice(0, 280)
+  };
+}
+
+function chooseSnapshotLines(input: {
+  textLines: string[];
+  htmlLines: string[];
+}): string[] {
+  const { textLines, htmlLines } = input;
+  if (textLines.length === 0) {
+    return htmlLines;
+  }
+  if (htmlLines.length === 0) {
+    return textLines;
+  }
+
+  const textLength = normalizeWhitespace(textLines.join(" ")).length;
+  const htmlLength = normalizeWhitespace(htmlLines.join(" ")).length;
+  const textHasImages = hasImageMarker(textLines);
+  const htmlHasImages = hasImageMarker(htmlLines);
+
+  if (htmlHasImages && !textHasImages && htmlLength >= 40) {
+    return htmlLines;
+  }
+
+  if (textLength < 40 && htmlLength >= textLength) {
+    return htmlLines;
+  }
+
+  return textLines;
+}
+
+function extractLinkedSnapshotLinesFromHtml(page: FetchLinkedPage): string[] {
+  if (!page.html || page.html.trim().length === 0) {
+    return [];
+  }
+
+  const sanitizedHtml = stripStyleBlocks(page.html);
+  let dom: JSDOM;
+  try {
+    dom = new JSDOM(sanitizedHtml, { url: page.url });
+  } catch {
+    return [];
+  }
+
+  const candidates = [...dom.window.document.querySelectorAll("main article, article")];
+  const mainRoot = dom.window.document.querySelector("main");
+  if (mainRoot && !candidates.includes(mainRoot)) {
+    candidates.push(mainRoot);
+  }
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  const bestRoot = [...candidates]
+    .map((root) => ({
+      root,
+      score: normalizeWhitespace(root.textContent ?? "").length +
+        (root.querySelectorAll("img").length * 300) +
+        (root.querySelectorAll("[data-testid='markdown-code-block']").length * 120)
+    }))
+    .sort((left, right) => right.score - left.score)[0]?.root;
+
+  if (!bestRoot) {
+    return [];
+  }
+
+  let pageUrl: URL;
+  try {
+    pageUrl = new URL(page.url);
+  } catch {
+    return [];
+  }
+
+  const blocks = [...bestRoot.querySelectorAll(
+    "h1, h2, h3, p, li, blockquote, pre, .longform-unstyled, img, [data-testid='twitter-article-title'], [data-testid='markdown-code-block'], [data-testid='tweetText'], [data-testid='tweetPhoto'] img"
+  )];
+
+  const lines: string[] = [];
+  for (const block of blocks) {
+    if (block.tagName.toLowerCase() === "img") {
+      const imageUrl = extractSnapshotImageUrl(block, pageUrl);
+      if (imageUrl) {
+        lines.push(`[[IMAGE:${imageUrl}]]`);
+      }
+      continue;
+    }
+
+    const text = normalizeWhitespace(block.textContent ?? "");
+    if (text.length > 0) {
+      lines.push(text);
+    }
+  }
+
+  if (lines.length === 0) {
+    return [];
+  }
+
+  return cleanLinkedTextSnapshot(lines.join("\n"));
 }
 
 function isLikelyCodeLine(line: string): boolean {
@@ -576,6 +1055,13 @@ function renderSnapshotBlocks(lines: string[]): { contentHtml: string; excerptTe
 
   for (let index = 0; index < lines.length;) {
     const line = lines[index];
+    const imageUrl = parseImageMarker(line);
+    if (imageUrl) {
+      html.push(`<p><img src="${escapeHtml(imageUrl)}" alt="" /></p>`);
+      index += 1;
+      continue;
+    }
+
     const language = parseCodeLanguage(line);
 
     if (language && index + 1 < lines.length && isLikelyCodeLine(lines[index + 1])) {
@@ -646,17 +1132,35 @@ function renderSnapshotBlocks(lines: string[]): { contentHtml: string; excerptTe
 }
 
 function tryExtractFromLinkedSnapshot(page: FetchLinkedPage): ExtractedMainContent | undefined {
-  if (!isXArticleUrl(page.url) || !page.text) {
+  if (!isXArticleUrl(page.url)) {
     return undefined;
   }
 
-  const cleanedLines = cleanLinkedTextSnapshot(page.text);
+  const richExtracted = tryExtractFromLinkedHtmlRich(page);
+  if (richExtracted) {
+    return richExtracted;
+  }
+
+  const textLines = page.text ? cleanLinkedTextSnapshot(page.text) : [];
+  const htmlLines = extractLinkedSnapshotLinesFromHtml(page);
+  const cleanedLines = chooseSnapshotLines({
+    textLines,
+    htmlLines
+  });
+  if (cleanedLines.length === 0) {
+    return undefined;
+  }
+
   const cleanedText = cleanedLines.join(" ");
   if (cleanedText.length < 40 || hasBlockedMarker(cleanedText)) {
     return undefined;
   }
 
-  const titleCandidate = cleanLinkedTitle(page.title) ?? cleanedLines[0]?.slice(0, 160);
+  const firstHtmlTextLine = htmlLines.find((line) => !parseImageMarker(line));
+  const firstTextLine = cleanedLines.find((line) => !parseImageMarker(line));
+  const titleCandidate = cleanLinkedTitle(page.title) ??
+    firstHtmlTextLine?.slice(0, 160) ??
+    firstTextLine?.slice(0, 160);
   if (!titleCandidate) {
     return undefined;
   }
@@ -920,7 +1424,7 @@ export class XExtractor implements ContentExtractor {
 
   public async extract(input: FetchResult): Promise<ExtractedMainContent> {
     const finalUrl = new URL(input.finalUrl);
-    const dom = new JSDOM(input.html, { url: finalUrl.toString() });
+    const dom = new JSDOM(stripStyleBlocks(input.html), { url: finalUrl.toString() });
     const { document } = dom.window;
 
     const statusRef = resolveStatusRef(input, document, finalUrl);

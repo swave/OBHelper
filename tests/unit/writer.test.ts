@@ -126,13 +126,84 @@ describe("ObsidianWriter", () => {
 
     const noteContent = await readFile(result.outputPath, "utf8");
     expect(noteContent).toContain("## Images");
-    expect(noteContent).toContain("![Image 1](2026-01-01-Image Note_assets/image-1.jpg)");
-    expect(noteContent).toContain("![Image 2](2026-01-01-Image Note_assets/image-2.png)");
+    expect(noteContent).toContain("![Image 1](<2026-01-01-Image Note_assets/image-1.jpg>)");
+    expect(noteContent).toContain("![Image 2](<2026-01-01-Image Note_assets/image-2.png>)");
     expect(noteContent).not.toContain("![Image 3]");
 
     const image1 = await readFile(path.join(vaultPath, "Inbox", "2026-01-01-Image Note_assets", "image-1.jpg"), "utf8");
     const image2 = await readFile(path.join(vaultPath, "Inbox", "2026-01-01-Image Note_assets", "image-2.png"), "utf8");
     expect(image1).toBe("fake-jpg");
     expect(image2).toBe("fake-png");
+  });
+
+  it("replaces inline remote markdown image urls with local asset paths", async () => {
+    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obfronter-test-inline-assets-"));
+    const writer = new ObsidianWriter(async (url) => ({
+      ok: url === "https://example.com/inline.jpg",
+      status: url === "https://example.com/inline.jpg" ? 200 : 404,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === "content-type" ? "image/jpeg" : null)
+      },
+      arrayBuffer: async () => new TextEncoder().encode("inline-jpg").buffer
+    }));
+
+    const result = await writer.write(
+      {
+        sourceUrl: "https://example.com/post",
+        sourcePlatform: "generic",
+        fetchedAt: "2026-01-01T10:00:00.000Z",
+        title: "Inline Image Note",
+        markdownBody: "Before image\n\n![inline](https://example.com/inline.jpg)\n\nAfter image"
+      },
+      {
+        vaultPath,
+        subdirectory: "Inbox"
+      }
+    );
+
+    const noteContent = await readFile(result.outputPath, "utf8");
+    expect(noteContent).toContain("![inline](<2026-01-01-Inline Image Note_assets/image-1.jpg>)");
+    expect(noteContent).not.toContain("https://example.com/inline.jpg");
+    expect(noteContent).not.toContain("## Images");
+
+    const image = await readFile(path.join(vaultPath, "Inbox", "2026-01-01-Inline Image Note_assets", "image-1.jpg"), "utf8");
+    expect(image).toBe("inline-jpg");
+  });
+
+  it("replaces inline markdown image urls that contain escaped query separators", async () => {
+    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obfronter-test-inline-escaped-"));
+    const writer = new ObsidianWriter(async (url) => ({
+      ok: url === "https://example.com/inline.jpg?format=jpg&name=large",
+      status: url === "https://example.com/inline.jpg?format=jpg&name=large" ? 200 : 404,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === "content-type" ? "image/jpeg" : null)
+      },
+      arrayBuffer: async () => new TextEncoder().encode("inline-jpg-escaped").buffer
+    }));
+
+    const result = await writer.write(
+      {
+        sourceUrl: "https://example.com/post",
+        sourcePlatform: "generic",
+        fetchedAt: "2026-01-01T10:00:00.000Z",
+        title: "Inline Escaped Image Note",
+        markdownBody: "Before\n\n![inline](https://example.com/inline.jpg?format=jpg&amp;name=large)\n\nAfter"
+      },
+      {
+        vaultPath,
+        subdirectory: "Inbox"
+      }
+    );
+
+    const noteContent = await readFile(result.outputPath, "utf8");
+    expect(noteContent).toContain("![inline](<2026-01-01-Inline Escaped Image Note_assets/image-1.jpg>)");
+    expect(noteContent).not.toContain("## Images");
+    expect(noteContent).not.toContain("amp;");
+
+    const image = await readFile(
+      path.join(vaultPath, "Inbox", "2026-01-01-Inline Escaped Image Note_assets", "image-1.jpg"),
+      "utf8"
+    );
+    expect(image).toBe("inline-jpg-escaped");
   });
 });

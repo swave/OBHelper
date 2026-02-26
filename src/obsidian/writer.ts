@@ -107,20 +107,62 @@ function inferExtensionFromUrl(mediaUrl: string): string | undefined {
   return undefined;
 }
 
+function normalizeMediaUrlKey(url: string): string {
+  return url
+    .trim()
+    .replaceAll("&amp;", "&")
+    .replaceAll("&#38;", "&")
+    .replaceAll("&#x26;", "&");
+}
+
 function appendLocalImagesSection(markdown: string, relativeImagePaths: string[]): string {
   if (relativeImagePaths.length === 0) {
     return markdown;
   }
 
+  const toMarkdownDestination = (relativePath: string): string => `<${relativePath}>`;
   const lines = [
     markdown.trimEnd(),
     "",
     "## Images",
     "",
-    ...relativeImagePaths.map((relativePath, index) => `![Image ${index + 1}](${relativePath})`)
+    ...relativeImagePaths.map((relativePath, index) => `![Image ${index + 1}](${toMarkdownDestination(relativePath)})`)
   ];
 
   return `${lines.join("\n")}\n`;
+}
+
+function extractMarkdownImageUrls(markdown: string): string[] {
+  const matches = markdown.matchAll(/!\[[^\]]*]\((https?:\/\/[^)\s]+)(?:\s+["'][^"']*["'])?\)/g);
+  const urls: string[] = [];
+  for (const match of matches) {
+    const captured = match[1] ? normalizeMediaUrlKey(match[1]) : undefined;
+    if (captured && !urls.includes(captured)) {
+      urls.push(captured);
+    }
+  }
+  return urls;
+}
+
+function replaceMarkdownImageUrls(markdown: string, replacements: Map<string, string>): string {
+  if (replacements.size === 0) {
+    return markdown;
+  }
+
+  const toMarkdownDestination = (relativePath: string): string => `<${relativePath}>`;
+  return markdown.replace(
+    /!\[([^\]]*)]\((https?:\/\/[^)\s]+)(?:\s+(["'][^"']*["']))?\)/g,
+    (fullMatch, altText: string, url: string, optionalTitle?: string) => {
+      const replacement = replacements.get(url) ?? replacements.get(normalizeMediaUrlKey(url));
+      if (!replacement) {
+        return fullMatch;
+      }
+
+      return optionalTitle
+        ? `![${altText}](${toMarkdownDestination(replacement)} ${optionalTitle})`
+        : `![${altText}](${toMarkdownDestination(replacement)})`;
+    }
+  );
 }
 
 async function chooseAvailablePath(basePath: string): Promise<{ filePath: string; created: boolean }> {
@@ -151,10 +193,10 @@ export class ObsidianWriter implements DocumentWriter {
   ) {}
 
   private async downloadLocalImages(input: {
-    document: NormalizedDocument;
+    mediaUrls: string[];
     notePath: string;
-  }): Promise<string[]> {
-    const mediaUrls = [...new Set(input.document.mediaUrls ?? [])].slice(0, MAX_LOCAL_IMAGES);
+  }): Promise<Array<{ sourceUrl: string; relativePath: string }>> {
+    const mediaUrls = [...new Set(input.mediaUrls)].slice(0, MAX_LOCAL_IMAGES);
     if (mediaUrls.length === 0) {
       return [];
     }
@@ -163,7 +205,7 @@ export class ObsidianWriter implements DocumentWriter {
     const noteBaseName = path.basename(input.notePath, path.extname(input.notePath));
     const assetsDirName = `${noteBaseName}_assets`;
     const assetsDirPath = path.join(noteDir, assetsDirName);
-    const downloadedRelativePaths: string[] = [];
+    const downloaded: Array<{ sourceUrl: string; relativePath: string }> = [];
     let savedIndex = 1;
 
     for (const mediaUrl of mediaUrls) {
@@ -206,11 +248,14 @@ export class ObsidianWriter implements DocumentWriter {
       await writeFile(absoluteAssetPath, Buffer.from(bytes));
 
       const relativeAssetPath = path.relative(noteDir, absoluteAssetPath);
-      downloadedRelativePaths.push(toPosixPath(relativeAssetPath));
+      downloaded.push({
+        sourceUrl: mediaUrl,
+        relativePath: toPosixPath(relativeAssetPath)
+      });
       savedIndex += 1;
     }
 
-    return downloadedRelativePaths;
+    return downloaded;
   }
 
   public async write(document: NormalizedDocument, options: WriteOptions): Promise<SaveResult> {
@@ -228,11 +273,25 @@ export class ObsidianWriter implements DocumentWriter {
       ? { filePath: targetFile, created: !(await hasPath(targetFile)) }
       : await chooseAvailablePath(targetFile);
 
-    const localImagePaths = await this.downloadLocalImages({
-      document,
+    let markdown = renderMarkdownFile(document);
+    const inlineImageUrls = extractMarkdownImageUrls(markdown);
+    const candidateMediaUrls = [...new Set([...(document.mediaUrls ?? []), ...inlineImageUrls])];
+    const downloadedImages = await this.downloadLocalImages({
+      mediaUrls: candidateMediaUrls,
       notePath: resolved.filePath
     });
-    const markdown = appendLocalImagesSection(renderMarkdownFile(document), localImagePaths);
+    const replacementMap = new Map<string, string>();
+    for (const entry of downloadedImages) {
+      replacementMap.set(entry.sourceUrl, entry.relativePath);
+      replacementMap.set(normalizeMediaUrlKey(entry.sourceUrl), entry.relativePath);
+    }
+    markdown = replaceMarkdownImageUrls(markdown, replacementMap);
+
+    const replacedInlineCount = inlineImageUrls.filter((url) => replacementMap.has(url)).length;
+    if (replacedInlineCount === 0) {
+      markdown = appendLocalImagesSection(markdown, downloadedImages.map((entry) => entry.relativePath));
+    }
+
     await writeFile(resolved.filePath, markdown, "utf8");
 
     return {
