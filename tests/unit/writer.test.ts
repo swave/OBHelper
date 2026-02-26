@@ -43,7 +43,7 @@ describe("ObsidianWriter", () => {
       }
     );
 
-    expect(first.fileName).toBe("2026-01-01-My Test Note.md");
+    expect(first.fileName).toBe("My Test Note.md");
 
     const fileContent = await readFile(first.outputPath, "utf8");
     expect(fileContent).toContain("source_platform: generic");
@@ -67,7 +67,7 @@ describe("ObsidianWriter", () => {
       }
     );
 
-    expect(second.fileName).toBe("2026-01-01-My Test Note-2.md");
+    expect(second.fileName).toBe("My Test Note-2.md");
   });
 
   it("downloads remote images to local assets and appends markdown image embeds", async () => {
@@ -126,12 +126,12 @@ describe("ObsidianWriter", () => {
 
     const noteContent = await readFile(result.outputPath, "utf8");
     expect(noteContent).toContain("## Images");
-    expect(noteContent).toContain("![Image 1](<2026-01-01-Image Note_assets/image-1.jpg>)");
-    expect(noteContent).toContain("![Image 2](<2026-01-01-Image Note_assets/image-2.png>)");
+    expect(noteContent).toContain("![Image 1](<Image Note_assets/image-1.jpg>)");
+    expect(noteContent).toContain("![Image 2](<Image Note_assets/image-2.png>)");
     expect(noteContent).not.toContain("![Image 3]");
 
-    const image1 = await readFile(path.join(vaultPath, "Inbox", "2026-01-01-Image Note_assets", "image-1.jpg"), "utf8");
-    const image2 = await readFile(path.join(vaultPath, "Inbox", "2026-01-01-Image Note_assets", "image-2.png"), "utf8");
+    const image1 = await readFile(path.join(vaultPath, "Inbox", "Image Note_assets", "image-1.jpg"), "utf8");
+    const image2 = await readFile(path.join(vaultPath, "Inbox", "Image Note_assets", "image-2.png"), "utf8");
     expect(image1).toBe("fake-jpg");
     expect(image2).toBe("fake-png");
   });
@@ -162,11 +162,11 @@ describe("ObsidianWriter", () => {
     );
 
     const noteContent = await readFile(result.outputPath, "utf8");
-    expect(noteContent).toContain("![inline](<2026-01-01-Inline Image Note_assets/image-1.jpg>)");
+    expect(noteContent).toContain("![inline](<Inline Image Note_assets/image-1.jpg>)");
     expect(noteContent).not.toContain("https://example.com/inline.jpg");
     expect(noteContent).not.toContain("## Images");
 
-    const image = await readFile(path.join(vaultPath, "Inbox", "2026-01-01-Inline Image Note_assets", "image-1.jpg"), "utf8");
+    const image = await readFile(path.join(vaultPath, "Inbox", "Inline Image Note_assets", "image-1.jpg"), "utf8");
     expect(image).toBe("inline-jpg");
   });
 
@@ -196,12 +196,12 @@ describe("ObsidianWriter", () => {
     );
 
     const noteContent = await readFile(result.outputPath, "utf8");
-    expect(noteContent).toContain("![inline](<2026-01-01-Inline Escaped Image Note_assets/image-1.jpg>)");
+    expect(noteContent).toContain("![inline](<Inline Escaped Image Note_assets/image-1.jpg>)");
     expect(noteContent).not.toContain("## Images");
     expect(noteContent).not.toContain("amp;");
 
     const image = await readFile(
-      path.join(vaultPath, "Inbox", "2026-01-01-Inline Escaped Image Note_assets", "image-1.jpg"),
+      path.join(vaultPath, "Inbox", "Inline Escaped Image Note_assets", "image-1.jpg"),
       "utf8"
     );
     expect(image).toBe("inline-jpg-escaped");

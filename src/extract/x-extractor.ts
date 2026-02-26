@@ -357,6 +357,19 @@ function isMostlyUrlText(text: string): boolean {
   return stripped.length === 0;
 }
 
+function extractTextLengthFromHtml(html: string): number {
+  if (html.trim().length === 0) {
+    return 0;
+  }
+
+  try {
+    const dom = new JSDOM(`<body>${html}</body>`);
+    return normalizeWhitespace(dom.window.document.body.textContent ?? "").length;
+  } catch {
+    return normalizeWhitespace(html.replace(/<[^>]+>/g, " ")).length;
+  }
+}
+
 function renderExpandedLinksBlock(urls: string[]): string {
   if (urls.length === 0) {
     return "";
@@ -433,6 +446,9 @@ const CODE_LANG_ALIASES: Record<string, string> = {
   ts: "typescript",
   python: "python",
   py: "python",
+  plaintext: "plaintext",
+  text: "plaintext",
+  txt: "plaintext",
   diff: "diff"
 };
 
@@ -509,6 +525,60 @@ function stripStyleBlocks(html: string): string {
 function parseCodeLanguage(line: string): string | undefined {
   const normalized = line.trim().toLowerCase();
   return CODE_LANG_ALIASES[normalized];
+}
+
+function renderPlainTextWithInlineCode(input: string): string {
+  const text = normalizeWhitespace(input);
+  if (text.length === 0) {
+    return "";
+  }
+
+  if (!text.includes("`")) {
+    return escapeHtml(text);
+  }
+
+  const tokens = text.split(/`([^`\n<>]+)`/g);
+  let output = "";
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.length === 0) {
+      continue;
+    }
+
+    if (index % 2 === 1) {
+      output += `<code>${escapeHtml(decodeInlineTokenHtmlEntities(token))}</code>`;
+    } else {
+      output += escapeHtml(token);
+    }
+  }
+
+  return output;
+}
+
+function decodeInlineTokenHtmlEntities(input: string): string {
+  let output = input;
+  for (let pass = 0; pass < 2; pass += 1) {
+    output = output
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("&quot;", "\"")
+      .replaceAll("&#39;", "'")
+      .replaceAll("&#x27;", "'")
+      .replaceAll("&amp;", "&");
+  }
+
+  return output;
+}
+
+function promoteInlineBacktickCode(html: string): string {
+  if (!html.includes("`")) {
+    return html;
+  }
+
+  return html.replace(
+    /`([^`\n<>]+)`/g,
+    (_match: string, token: string) => `<code>${escapeHtml(decodeInlineTokenHtmlEntities(token))}</code>`
+  );
 }
 
 function parseImageMarker(line: string): string | undefined {
@@ -791,6 +861,7 @@ function tryExtractFromLinkedHtmlRich(page: FetchLinkedPage): ExtractedMainConte
 
   const contentParts: string[] = [];
   const excerptParts: string[] = [];
+  let lastCodeBlockBody = "";
 
   for (let index = 0; index < blocks.length;) {
     const node = blocks[index];
@@ -823,7 +894,10 @@ function tryExtractFromLinkedHtmlRich(page: FetchLinkedPage): ExtractedMainConte
           itemHtml,
           articleHandle
         })) {
-          items.push(`<li>${itemHtml.length > 0 ? itemHtml : escapeHtml(itemText)}</li>`);
+          const renderedItemHtml = itemHtml.length > 0
+            ? promoteInlineBacktickCode(itemHtml)
+            : renderPlainTextWithInlineCode(itemText);
+          items.push(`<li>${renderedItemHtml}</li>`);
           excerptParts.push(itemText);
         }
         index += 1;
@@ -837,8 +911,27 @@ function tryExtractFromLinkedHtmlRich(page: FetchLinkedPage): ExtractedMainConte
     if (tagName === "pre") {
       const codeText = node.textContent?.replace(/\r/g, "").trim() ?? "";
       if (codeText.length > 0) {
-        contentParts.push(`<pre><code>${escapeHtml(codeText)}</code></pre>`);
-        excerptParts.push(codeText.slice(0, 200));
+        const codeLines = codeText.split("\n");
+        const detectedLanguage = parseCodeLanguage(codeLines[0]);
+        const hasBodyAfterLanguage = Boolean(
+          detectedLanguage &&
+          codeLines.slice(1).some((line: string) => line.trim().length > 0)
+        );
+        const normalizedBody = hasBodyAfterLanguage
+          ? codeLines.slice(1).join("\n").trim()
+          : codeText;
+
+        if (normalizedBody.length > 0 && normalizedBody !== lastCodeBlockBody) {
+          if (detectedLanguage && hasBodyAfterLanguage) {
+            contentParts.push(
+              `<pre><code class="language-${detectedLanguage}">${escapeHtml(normalizedBody)}</code></pre>`
+            );
+          } else {
+            contentParts.push(`<pre><code>${escapeHtml(normalizedBody)}</code></pre>`);
+          }
+          excerptParts.push(normalizedBody.slice(0, 200));
+          lastCodeBlockBody = normalizedBody;
+        }
       }
       index += 1;
       continue;
@@ -881,7 +974,10 @@ function tryExtractFromLinkedHtmlRich(page: FetchLinkedPage): ExtractedMainConte
         const itemHtml = listInlineHtml.replace(markerPattern, "").trim();
         const itemText = listText.replace(markerPattern, "").trim();
         if (itemText.length > 0) {
-          items.push(`<li>${itemHtml.length > 0 ? itemHtml : escapeHtml(itemText)}</li>`);
+          const renderedItemHtml = itemHtml.length > 0
+            ? promoteInlineBacktickCode(itemHtml)
+            : renderPlainTextWithInlineCode(itemText);
+          items.push(`<li>${renderedItemHtml}</li>`);
           excerptParts.push(itemText);
         }
         index += 1;
@@ -900,9 +996,15 @@ function tryExtractFromLinkedHtmlRich(page: FetchLinkedPage): ExtractedMainConte
     } else if (tagName === "h2" || tagName === "h3") {
       contentParts.push(`<${tagName}>${headingHtml}</${tagName}>`);
     } else if (tagName === "blockquote") {
-      contentParts.push(`<blockquote>${inlineHtml.length > 0 ? inlineHtml : escapeHtml(rawText)}</blockquote>`);
+      const blockquoteHtml = inlineHtml.length > 0
+        ? promoteInlineBacktickCode(inlineHtml)
+        : renderPlainTextWithInlineCode(rawText);
+      contentParts.push(`<blockquote>${blockquoteHtml}</blockquote>`);
     } else {
-      contentParts.push(`<p>${inlineHtml.length > 0 ? inlineHtml : escapeHtml(rawText)}</p>`);
+      const paragraphHtml = inlineHtml.length > 0
+        ? promoteInlineBacktickCode(inlineHtml)
+        : renderPlainTextWithInlineCode(rawText);
+      contentParts.push(`<p>${paragraphHtml}</p>`);
     }
     excerptParts.push(rawText);
     index += 1;
@@ -1164,13 +1266,13 @@ function renderSnapshotBlocks(lines: string[]): { contentHtml: string; excerptTe
         cursor += 1;
       }
       if (items.length > 0) {
-        html.push(`<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`);
+        html.push(`<ul>${items.map((item) => `<li>${renderPlainTextWithInlineCode(item)}</li>`).join("")}</ul>`);
         index = cursor;
         continue;
       }
     }
 
-    html.push(`<p>${escapeHtml(line)}</p>`);
+    html.push(`<p>${renderPlainTextWithInlineCode(line)}</p>`);
     excerptParts.push(line);
     index += 1;
   }
@@ -1496,12 +1598,21 @@ export class XExtractor implements ContentExtractor {
         (url): url is string => Boolean(url && !url.startsWith("https://t.co/"))
       );
       const prefetchedLinks = [...new Set((input.linkedPages ?? []).map((page) => page.url))];
+      const hasPrefetchedXArticle = (input.linkedPages ?? []).some((page) => isXArticleUrl(page.url));
       const linkOnly = isMostlyUrlText(tweetText) && (expandedLinks.length > 0 || prefetchedLinks.length > 0);
 
-    if (linkOnly) {
+      if (linkOnly || hasPrefetchedXArticle) {
         const linkedPageContent = await this.tryPrefetchedLinkedPageContent(input.linkedPages) ??
           await this.tryLinkedPageContent(expandedLinks);
         if (linkedPageContent) {
+          const linkedContentTextLength = extractTextLengthFromHtml(linkedPageContent.extracted.contentHtml);
+          const tweetTextLength = normalizeWhitespace(tweetText).length;
+          const preferLinkedContent = linkOnly || (
+            hasPrefetchedXArticle &&
+            linkedContentTextLength >= Math.max(260, tweetTextLength + 80)
+          );
+
+          if (preferLinkedContent) {
           return {
             title: linkedPageContent.extracted.title,
             contentHtml: [
@@ -1516,6 +1627,7 @@ export class XExtractor implements ContentExtractor {
             statusId: statusRef.statusId,
             mediaUrls: [...new Set([...(mediaUrls || []), ...expandedLinks, ...prefetchedLinks])]
           };
+          }
         }
       }
 

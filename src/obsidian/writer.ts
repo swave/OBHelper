@@ -64,10 +64,6 @@ export function sanitizeFileName(input: string): string {
   return normalized.slice(0, MAX_FILE_NAME_LENGTH);
 }
 
-function formatDatePrefix(iso: string): string {
-  return iso.slice(0, 10);
-}
-
 function toPosixPath(input: string): string {
   return input.split(path.sep).join("/");
 }
@@ -260,7 +256,7 @@ export class ObsidianWriter implements DocumentWriter {
 
   public async write(document: NormalizedDocument, options: WriteOptions): Promise<SaveResult> {
     const safeTitle = sanitizeFileName(document.title);
-    const datedName = `${formatDatePrefix(document.fetchedAt)}-${safeTitle}.md`;
+    const datedName = `${safeTitle}.md`;
 
     const targetDir = options.subdirectory
       ? path.join(options.vaultPath, options.subdirectory)

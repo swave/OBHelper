@@ -870,4 +870,172 @@ describe("XExtractor", () => {
     expect(result.contentHtml).not.toContain("profile_images");
     expect(result.contentHtml).not.toContain("@elvissun");
   });
+
+  it("deduplicates adjacent rich code blocks and removes standalone language label lines", async () => {
+    const oEmbedFetch = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({})
+    }));
+    const extractor = new XExtractor(
+      oEmbedFetch,
+      async () => undefined,
+      async () => ({
+        ok: false,
+        status: 404,
+        url: "https://example.com",
+        text: async () => ""
+      })
+    );
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/ryancarson/status/2023452909883609111",
+      finalUrl: "https://x.com/ryancarson/status/2023452909883609111",
+      html: `
+        <html><body><article data-testid="tweet"><div data-testid="tweetText"><a href="https://t.co/example">https://t.co/example</a></div></article></body></html>
+      `,
+      statusCode: 200,
+      fetchedAt: "2026-02-26T12:18:00.000Z",
+      linkedPages: [
+        {
+          url: "https://x.com/ryancarson/article/2023452909883609111",
+          html: "<html><body><main data-testid=\"twitterArticleReadView\"><h2>4) Use a single rerun-comment writer with SHA dedupe</h2><p>Use exactly one workflow as canonical rerun requester and dedupe by marker + <code>sha:&lt;head&gt;</code>.</p><pre>typescript\nconst marker = '&lt;!-- review-agent-auto-rerun --&gt;';\nconst trigger = `sha:${headSha}`;</pre><pre>const marker = '&lt;!-- review-agent-auto-rerun --&gt;';\nconst trigger = `sha:${headSha}`;</pre><p>Then continue with next section.</p></main></body></html>",
+          title: "X",
+          text: "Use exactly one workflow as canonical rerun requester and dedupe by marker."
+        }
+      ]
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.contentHtml).toContain("Use exactly one workflow as canonical rerun requester and dedupe by marker");
+    expect(result.contentHtml).toContain('<pre><code class="language-typescript">');
+    expect(result.contentHtml).toContain("const marker = &#39;&lt;!-- review-agent-auto-rerun --&gt;&#39;;");
+    expect(result.contentHtml.match(/<pre><code/g)?.length ?? 0).toBe(1);
+    expect(result.contentHtml).not.toContain("<code>typescript");
+    expect(result.contentHtml).not.toContain("typescript\nconst marker");
+  });
+
+  it("prefers prefetched x article content even when tweet is not link-only", async () => {
+    const oEmbedFetch = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({})
+    }));
+    const extractor = new XExtractor(
+      oEmbedFetch,
+      async () => undefined,
+      async () => ({
+        ok: false,
+        status: 404,
+        url: "https://example.com",
+        text: async () => ""
+      })
+    );
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/ryancarson/status/2023452909883609111",
+      finalUrl: "https://x.com/ryancarson/status/2023452909883609111",
+      html: `
+        <html><body><article data-testid="tweet"><div data-testid="tweetText">I've been grinding with Codex through setup for Harness Engineering. <a href="https://t.co/example">https://t.co/example</a></div></article></body></html>
+      `,
+      statusCode: 200,
+      fetchedAt: "2026-02-26T12:19:00.000Z",
+      linkedPages: [
+        {
+          url: "https://x.com/ryancarson/article/2023452909883609111",
+          html: "<html><body><main data-testid=\"twitterArticleReadView\"><h2>Code Factory</h2><p>Use exactly one workflow as canonical rerun requester and dedupe by marker + <code>sha:&lt;head&gt;</code>.</p><p>Additional long-form implementation details that exceed the short tweet summary by a wide margin and represent the main article content. This section intentionally includes enough detail to push article body length well past the fallback threshold: enforce head-SHA freshness, dedupe rerun requests, and preserve deterministic orchestration and policy checks across repeated synchronize events.</p></main></body></html>",
+          title: "Code Factory",
+          text: "Use exactly one workflow as canonical rerun requester and dedupe by marker."
+        }
+      ]
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.title).toContain("Code Factory");
+    expect(result.contentHtml).toContain("Linked content extracted from");
+    expect(result.contentHtml).toContain("Use exactly one workflow as canonical rerun requester and dedupe by marker");
+    expect(result.contentHtml).toContain("Additional long-form implementation details");
+  });
+
+  it("treats plaintext code label as language and dedupes adjacent duplicate block", async () => {
+    const oEmbedFetch = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({})
+    }));
+    const extractor = new XExtractor(
+      oEmbedFetch,
+      async () => undefined,
+      async () => ({
+        ok: false,
+        status: 404,
+        url: "https://example.com",
+        text: async () => ""
+      })
+    );
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/ryancarson/status/2023452909883609111",
+      finalUrl: "https://x.com/ryancarson/status/2023452909883609111",
+      html: `
+        <html><body><article data-testid="tweet"><div data-testid="tweetText"><a href="https://t.co/example">https://t.co/example</a></div></article></body></html>
+      `,
+      statusCode: 200,
+      fetchedAt: "2026-02-26T12:20:00.000Z",
+      linkedPages: [
+        {
+          url: "https://x.com/ryancarson/article/2023452909883609111",
+          html: "<html><body><main data-testid=\"twitterArticleReadView\"><h2>8) Preserve incident memory with a harness-gap loop</h2><pre>plaintext\nproduction regression -> harness gap issue -> case added -> SLA tracked</pre><pre>production regression -> harness gap issue -> case added -> SLA tracked</pre><p>This keeps fixes from becoming one-off patches and grows long-term coverage.</p></main></body></html>",
+          title: "X",
+          text: "Preserve incident memory"
+        }
+      ]
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.contentHtml).toContain('<pre><code class="language-plaintext">');
+    expect(result.contentHtml).toContain("production regression -&gt; harness gap issue -&gt; case added -&gt; SLA tracked");
+    expect(result.contentHtml.match(/<pre><code/g)?.length ?? 0).toBe(1);
+    expect(result.contentHtml).not.toContain("<code>plaintext");
+  });
+
+  it("promotes plain backtick spans to inline code tags to avoid html-like token breakage", async () => {
+    const oEmbedFetch = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({})
+    }));
+    const extractor = new XExtractor(
+      oEmbedFetch,
+      async () => undefined,
+      async () => ({
+        ok: false,
+        status: 404,
+        url: "https://example.com",
+        text: async () => ""
+      })
+    );
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/ryancarson/status/2023452909883609111",
+      finalUrl: "https://x.com/ryancarson/status/2023452909883609111",
+      html: `
+        <html><body><article data-testid="tweet"><div data-testid="tweetText"><a href="https://t.co/example">https://t.co/example</a></div></article></body></html>
+      `,
+      statusCode: 200,
+      fetchedAt: "2026-02-26T12:21:00.000Z",
+      linkedPages: [
+        {
+          url: "https://x.com/ryancarson/article/2023452909883609111",
+          html: "<html><body><main data-testid=\"twitterArticleReadView\"><h2>4) Use a single rerun-comment writer with SHA dedupe</h2><p>Use exactly one workflow as canonical rerun requester and dedupe by marker + `sha:&lt;head&gt;`.</p><p>Additional long-form body line to pass extraction thresholds and ensure rich mode is selected for this fixture.</p></main></body></html>",
+          title: "X",
+          text: "Use exactly one workflow as canonical rerun requester and dedupe by marker."
+        }
+      ]
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.contentHtml).toContain("<code>sha:&lt;head&gt;</code>");
+    expect(result.contentHtml).not.toContain("\\`sha:&lt;head&gt;\\`");
+  });
 });
