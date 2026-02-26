@@ -65,6 +65,8 @@ obfronter fetch "https://x.com/<user>/status/<id>" \
 ```
 
 ## Architecture
+See the full development blueprint in [ARCHITECTURE.md](./ARCHITECTURE.md).
+
 Pipeline stages are explicit and swappable:
 1. `fetch`: retrieve source HTML.
 2. `extract`: identify main content.

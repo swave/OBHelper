@@ -1,5 +1,7 @@
 # AGENTS.md (Repo)
 
+Architecture reference: [ARCHITECTURE.md](./ARCHITECTURE.md)
+
 ## X Debug Workflow (Required)
 
 Use this workflow for all changes related to X fetching/extraction, CDP integration, X login/session handling, and X E2E scripts.
