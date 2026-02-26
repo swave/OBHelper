@@ -2,6 +2,7 @@
 
 import { parseArgs } from "node:util";
 
+import { resolveFetchCliOptions } from "./cli-fetch-options.js";
 import { resolveCookieHeader } from "./core/cookie-header.js";
 import { asError, ObfronterError } from "./core/errors.js";
 import type { BrowserChannel } from "./core/types.js";
@@ -112,21 +113,13 @@ async function runFetchCli(args: string[]): Promise<void> {
     return;
   }
 
-  if (parsed.values["browser-mode"] && parsed.values["http-mode"]) {
-    throw new ObfronterError("INVALID_MODE", "Choose only one of --browser-mode or --http-mode.");
-  }
-
-  const cdpEndpoint = parsed.values["cdp-endpoint"]?.trim() || process.env.OBFRONTER_CDP_ENDPOINT?.trim() || undefined;
-  if (parsed.values["http-mode"] && cdpEndpoint) {
-    throw new ObfronterError("INVALID_MODE", "Choose only one of --http-mode or --cdp-endpoint.");
-  }
-
-  if (cdpEndpoint && parsed.values["session-profile-dir"]) {
-    throw new ObfronterError(
-      "INVALID_MODE",
-      "Choose one browser session source: --session-profile-dir or --cdp-endpoint."
-    );
-  }
+  const { cdpEndpoint } = resolveFetchCliOptions({
+    browserMode: parsed.values["browser-mode"],
+    httpMode: parsed.values["http-mode"],
+    cdpEndpointFlag: parsed.values["cdp-endpoint"],
+    cdpEndpointEnv: process.env.OBFRONTER_CDP_ENDPOINT,
+    sessionProfileDir: parsed.values["session-profile-dir"]
+  });
 
   const url = parsed.positionals[0];
   if (!url) {
