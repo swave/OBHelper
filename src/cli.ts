@@ -7,14 +7,12 @@ import { resolveCookieHeader } from "./core/cookie-header.js";
 import { asError, ObfronterError } from "./core/errors.js";
 import type { BrowserChannel } from "./core/types.js";
 import { runFetchCommand } from "./index.js";
-import { runXLoginCommand } from "./login/x-login.js";
 
 function printHelp(): void {
   const help = `obfronter - URL to Obsidian markdown pipeline
 
 Usage:
   obfronter fetch <url> --vault <path> [options]
-  obfronter login x --session-profile-dir <path> [options]
 
 Options:
   --vault <path>                Obsidian vault root path (or set OBSIDIAN_VAULT_PATH)
@@ -22,13 +20,11 @@ Options:
   --browser-mode                Force Playwright-backed browser fetch mode
   --http-mode                   Force plain HTTP fetch mode (disables X default browser mode)
   --session-profile-dir <path>  Browser profile dir for authenticated cookies
-  --browser-channel <name>      Browser channel for login/fetch browser mode (chrome|chromium|msedge)
+  --browser-channel <name>      Browser channel for fetch browser mode (chrome|chromium|msedge)
   --cdp-endpoint <url>          Chrome DevTools endpoint for attaching to a running browser (or set OBFRONTER_CDP_ENDPOINT)
   --cookie-file <path>          Cookie file path (raw header or Netscape format) for fetch requests
   --cookie-env <name>           Env var name containing cookie header for fetch requests
-  --url <url>                   Login page URL for login command (default: https://x.com/login)
-  --headless                    Run login browser in headless mode (default: false)
-  --timeout-ms <number>         Timeout in milliseconds (fetch default: 20000, login default: 60000)
+  --timeout-ms <number>         Timeout in milliseconds (fetch default: 20000)
   --overwrite                   Overwrite target file if it exists
   --header <k:v>                Optional request header (repeatable)
   --help                        Show help
@@ -177,66 +173,6 @@ async function runFetchCli(args: string[]): Promise<void> {
   );
 }
 
-async function runLoginCli(args: string[]): Promise<void> {
-  const parsed = parseArgs({
-    args,
-    allowPositionals: true,
-    options: {
-      "session-profile-dir": { type: "string" },
-      "browser-channel": { type: "string" },
-      url: { type: "string" },
-      headless: { type: "boolean", default: false },
-      "timeout-ms": { type: "string" },
-      help: { type: "boolean", default: false }
-    }
-  });
-
-  if (parsed.values.help) {
-    printHelp();
-    return;
-  }
-
-  const provider = parsed.positionals[0];
-  if (!provider) {
-    throw new ObfronterError("PROVIDER_REQUIRED", "Missing provider. Usage: obfronter login x --session-profile-dir <path>");
-  }
-
-  if (provider !== "x") {
-    throw new ObfronterError("LOGIN_PROVIDER_UNSUPPORTED", `Unsupported login provider: ${provider}`);
-  }
-
-  const sessionProfileDir = parsed.values["session-profile-dir"] ?? process.env.OBFRONTER_X_SESSION_DIR;
-  if (!sessionProfileDir) {
-    throw new ObfronterError(
-      "SESSION_PROFILE_DIR_REQUIRED",
-      "Missing --session-profile-dir (or OBFRONTER_X_SESSION_DIR environment variable)."
-    );
-  }
-
-  const timeoutMs = parsePositiveNumber(
-    parsed.values["timeout-ms"],
-    "--timeout-ms must be a positive number for login command."
-  );
-  const browserChannel = parseBrowserChannel(parsed.values["browser-channel"]);
-
-  const result = await runXLoginCommand({
-    sessionProfileDir,
-    loginUrl: parsed.values.url,
-    timeoutMs,
-    headless: parsed.values.headless,
-    browserChannel
-  });
-
-  process.stdout.write(
-    [
-      "login_provider=x",
-      `session_profile_dir=${result.sessionProfileDir}`,
-      `login_url=${result.loginUrl}`,
-      "saved=true"
-    ].join("\n") + "\n"
-  );
-}
-
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
 
@@ -247,11 +183,6 @@ async function main(): Promise<void> {
 
   if (command === "fetch") {
     await runFetchCli(rest);
-    return;
-  }
-
-  if (command === "login") {
-    await runLoginCli(rest);
     return;
   }
 

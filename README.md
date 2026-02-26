@@ -13,13 +13,12 @@ npm run build
 node dist/cli.js fetch "https://example.com/post" --vault "/path/to/ObsidianVault"
 ```
 
-`npm install` now auto-installs Playwright Chromium for local environments so `obfronter login x` works out of the box.
+`npm install` now auto-installs Playwright Chromium for local environments so browser fetch mode works out of the box.
 To skip this (for CI or constrained environments), set `OBFRONTER_SKIP_PLAYWRIGHT_INSTALL=1`.
 
 ## CLI Usage
 ```bash
 obfronter fetch <url> --vault <path> [options]
-obfronter login x --session-profile-dir <path> [options]
 ```
 
 Options:
@@ -27,22 +26,13 @@ Options:
 - `--browser-mode`: force browser-session fetch mode (Playwright)
 - `--http-mode`: force plain HTTP fetch mode (disables X auto browser mode)
 - `--session-profile-dir <path>`: browser profile dir for authenticated cookies
-- `--browser-channel <name>`: browser channel for login/fetch browser mode (`chrome`, `chromium`, `msedge`)
+- `--browser-channel <name>`: browser channel for fetch browser mode (`chrome`, `chromium`, `msedge`)
 - `--cdp-endpoint <url>`: attach fetch to a running Chrome DevTools endpoint (or set `OBFRONTER_CDP_ENDPOINT`)
 - `--cookie-file <path>`: cookie file for fetch (`raw cookie header` or `Netscape cookie file`)
 - `--cookie-env <name>`: env var name that contains cookie header for fetch
 - `--timeout-ms <number>`: fetch timeout
 - `--overwrite`: overwrite existing target file
 - `--header <k:v>`: repeatable custom HTTP header
-
-Login-specific options:
-- `--url <url>`: login URL (default: `https://x.com/login`)
-- `--headless`: run login browser in headless mode
-
-Example:
-```bash
-obfronter login x --session-profile-dir "$HOME/.obfronter/profiles/x" --browser-channel chrome
-```
 
 HTTP mode with cookies from env var:
 ```bash

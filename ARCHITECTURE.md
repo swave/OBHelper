@@ -36,7 +36,6 @@ CLI input
 | Markdown | HTML to Markdown conversion and frontmatter rendering | `src/markdown/render.ts` |
 | Obsidian | File naming and vault write behavior | `src/obsidian/writer.ts` |
 | Providers | Dependency wiring and extractor registry | `src/providers/default-deps.ts`, `src/providers/extractor-registry.ts` |
-| Login | Interactive login flow for X session setup | `src/login/x-login.ts` |
 
 ## 4. Runtime Modes and Strategy
 
@@ -149,4 +148,3 @@ Before merging:
 - Does CI remain green?
 - Is output markdown still readable and correctly ordered?
 - Did we avoid introducing bypass/security-risk behavior?
-
