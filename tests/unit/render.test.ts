@@ -88,4 +88,55 @@ describe("toNormalizedDocument", () => {
     expect(normalized.markdownBody).toContain("const marker = \"```\";");
     expect(normalized.markdownBody).toContain("````");
   });
+
+  it("promotes standalone multiline code tags to fenced code blocks", () => {
+    const normalized = toNormalizedDocument({
+      sourceUrl: "https://example.com/code",
+      sourcePlatform: "generic",
+      fetchedAt: "2026-02-26T12:00:00.000Z",
+      extracted: {
+        title: "Code Tag Test",
+        contentHtml:
+          "<p>Snippet:</p><p><code class=\"language-typescript\">const marker = '&lt;!-- review-agent-auto-rerun --&gt;';\nconst trigger = `sha:${headSha}`;</code></p>",
+        extractionStatus: "ok"
+      }
+    });
+
+    expect(normalized.markdownBody).toContain("```typescript");
+    expect(normalized.markdownBody).toContain("const marker = '<!-- review-agent-auto-rerun -->';");
+    expect(normalized.markdownBody).toContain("const trigger = `sha:${headSha}`;");
+    expect(normalized.markdownBody).toContain("```");
+  });
+
+  it("keeps inline code tags inline", () => {
+    const normalized = toNormalizedDocument({
+      sourceUrl: "https://example.com/code-inline",
+      sourcePlatform: "generic",
+      fetchedAt: "2026-02-26T12:00:00.000Z",
+      extracted: {
+        title: "Inline Code Tag Test",
+        contentHtml: "<p>Run <code>npm i obfronter</code> to install.</p>",
+        extractionStatus: "ok"
+      }
+    });
+
+    expect(normalized.markdownBody).toContain("Run `npm i obfronter` to install.");
+  });
+
+  it("preserves line breaks for weixin-style pre code blocks that use span + br", () => {
+    const normalized = toNormalizedDocument({
+      sourceUrl: "https://mp.weixin.qq.com/s/mock",
+      sourcePlatform: "weixin",
+      fetchedAt: "2026-02-26T12:00:00.000Z",
+      extracted: {
+        title: "Weixin Code Block",
+        contentHtml:
+          "<pre class=\"js_darkmode__27\"><code class=\"js_darkmode__28\"><span leaf=\"\">my-project/</span><span leaf=\"\"><br></span><span leaf=\"\">├── AGENTS.md       # Agent 入口</span><span leaf=\"\"><br></span><span leaf=\"\">└── repos/</span><span leaf=\"\"><br></span></code></pre>",
+        extractionStatus: "ok"
+      }
+    });
+
+    expect(normalized.markdownBody).toContain("```");
+    expect(normalized.markdownBody).toContain("my-project/\n├── AGENTS.md       # Agent 入口\n└── repos/");
+  });
 });

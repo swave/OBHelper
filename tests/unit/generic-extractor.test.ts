@@ -47,4 +47,34 @@ describe("GenericExtractor", () => {
     expect(result.title).toContain("Heavy Page");
     expect(result.contentHtml).toContain("Real content survives cleanup.");
   });
+
+  it("trims unrelated trailing sections for github.blog articles", async () => {
+    const html = [
+      "<!doctype html>",
+      "<html><head><title>Agent HQ</title></head><body>",
+      "<article>",
+      "<h1>Pick your agent</h1>",
+      "<p>Main body paragraph.</p>",
+      "<h2>Related posts</h2>",
+      "<p>Noise that should be removed.</p>",
+      "<h2>Site-wide Links</h2>",
+      "<p>More footer noise.</p>",
+      "</article>",
+      "</body></html>"
+    ].join("");
+
+    const extractor = new GenericExtractor();
+    const result = await extractor.extract({
+      requestedUrl: "https://github.blog/news-insights/company-news/pick-your-agent-use-claude-and-codex-on-agent-hq/",
+      finalUrl: "https://github.blog/news-insights/company-news/pick-your-agent-use-claude-and-codex-on-agent-hq/",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-01-01T10:00:00.000Z"
+    });
+
+    expect(result.contentHtml).toContain("Main body paragraph.");
+    expect(result.contentHtml).not.toContain("Related posts");
+    expect(result.contentHtml).not.toContain("Noise that should be removed.");
+    expect(result.contentHtml).not.toContain("Site-wide Links");
+  });
 });

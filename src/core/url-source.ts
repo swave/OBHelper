@@ -69,6 +69,7 @@ export interface WeixinArticleRef {
   mid?: string;
   idx?: string;
   sn?: string;
+  shortCode?: string;
 }
 
 function parseWeixinArticleRefFromUrl(url: URL): WeixinArticleRef | undefined {
@@ -77,7 +78,8 @@ function parseWeixinArticleRefFromUrl(url: URL): WeixinArticleRef | undefined {
   }
 
   const path = url.pathname.replace(/\/+$/, "");
-  if (path !== "/s") {
+  const shortPathMatch = path.match(/^\/s\/([0-9A-Za-z_-]+)$/i);
+  if (path !== "/s" && !shortPathMatch) {
     return undefined;
   }
 
@@ -85,12 +87,13 @@ function parseWeixinArticleRefFromUrl(url: URL): WeixinArticleRef | undefined {
     biz: url.searchParams.get("__biz") ?? undefined,
     mid: url.searchParams.get("mid") ?? undefined,
     idx: url.searchParams.get("idx") ?? undefined,
-    sn: url.searchParams.get("sn") ?? undefined
+    sn: url.searchParams.get("sn") ?? undefined,
+    shortCode: shortPathMatch?.[1]
   };
 }
 
 function hasWeixinArticleIdentity(ref: WeixinArticleRef): boolean {
-  return Boolean(ref.biz || ref.mid || ref.idx || ref.sn);
+  return Boolean(ref.biz || ref.mid || ref.idx || ref.sn || ref.shortCode);
 }
 
 export function parseWeixinArticleRef(url: URL): WeixinArticleRef | undefined {

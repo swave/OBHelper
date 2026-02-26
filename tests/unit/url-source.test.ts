@@ -53,6 +53,10 @@ describe("detectSourcePlatform", () => {
       idx: "1",
       sn: "abcd1234"
     });
+
+    expect(parseWeixinArticleRef(new URL("https://mp.weixin.qq.com/s/IhuDaFRvu6fELTFW2uLB0Q"))).toEqual({
+      shortCode: "IhuDaFRvu6fELTFW2uLB0Q"
+    });
   });
 
   it("accepts only weixin article URLs in weixin-specific parser", () => {
@@ -61,6 +65,8 @@ describe("detectSourcePlatform", () => {
         new URL("https://mp.weixin.qq.com/s?__biz=Mzkx&mid=2247483647&idx=1&sn=abcd1234")
       )
     ).toBe(true);
+    expect(isWeixinArticleUrl(new URL("https://mp.weixin.qq.com/s/IhuDaFRvu6fELTFW2uLB0Q"))).toBe(true);
+    expect(isWeixinArticleUrl(new URL("https://mp.weixin.qq.com/s"))).toBe(false);
     expect(isWeixinArticleUrl(new URL("https://mp.weixin.qq.com/mp/profile_ext?action=home"))).toBe(false);
   });
 });

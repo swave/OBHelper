@@ -13,6 +13,41 @@ function stripNonContentBlocks(html: string): string {
     .replace(/<template\b[^>]*>[\s\S]*?<\/template>/gi, "");
 }
 
+const GITHUB_BLOG_TRIM_MARKERS = new Set([
+  "related posts",
+  "explore more from github",
+  "we do newsletters, too",
+  "site-wide links"
+]);
+
+function normalizeHeadingText(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function trimGithubBlogTrailingNoise(contentHtml: string): string {
+  const dom = new JSDOM(`<body>${contentHtml}</body>`);
+  const { document } = dom.window;
+  const body = document.body;
+  const headings = Array.from(body.querySelectorAll("h1, h2, h3, h4, h5, h6")) as Element[];
+  const cutoffHeading = headings.find((heading) =>
+    GITHUB_BLOG_TRIM_MARKERS.has(normalizeHeadingText(heading.textContent ?? ""))
+  );
+
+  if (!cutoffHeading) {
+    return contentHtml;
+  }
+
+  let cursor: ChildNode | null = cutoffHeading;
+  while (cursor) {
+    const next: ChildNode | null = cursor.nextSibling;
+    cursor.remove();
+    cursor = next;
+  }
+
+  const trimmed = body.innerHTML.trim();
+  return trimmed.length > 0 ? trimmed : contentHtml;
+}
+
 export class GenericExtractor implements ContentExtractor {
   public readonly id = "generic";
 
@@ -27,9 +62,14 @@ export class GenericExtractor implements ContentExtractor {
       );
     }
 
+    const finalUrl = new URL(input.finalUrl);
+    const cleanedContent = finalUrl.hostname.toLowerCase() === "github.blog"
+      ? trimGithubBlogTrailingNoise(article.content)
+      : article.content;
+
     return {
       title: article.title,
-      contentHtml: article.content,
+      contentHtml: cleanedContent,
       byline: article.byline ?? undefined,
       excerpt: article.excerpt ?? undefined,
       publishedAt: article.publishedTime ?? undefined
