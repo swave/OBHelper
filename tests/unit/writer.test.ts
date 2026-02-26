@@ -14,7 +14,7 @@ describe("sanitizeFileName", () => {
 
 describe("ObsidianWriter", () => {
   it("writes markdown with frontmatter to vault subdirectory", async () => {
-    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obfronter-test-"));
+    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obhelper-test-"));
     const writer = new ObsidianWriter(async () => ({
       ok: false,
       status: 500,
@@ -71,7 +71,7 @@ describe("ObsidianWriter", () => {
   });
 
   it("downloads remote images to local assets and appends markdown image embeds", async () => {
-    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obfronter-test-assets-"));
+    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obhelper-test-assets-"));
     const writer = new ObsidianWriter(async (url) => {
       if (url === "https://example.com/one.jpg") {
         return {
@@ -137,7 +137,7 @@ describe("ObsidianWriter", () => {
   });
 
   it("replaces inline remote markdown image urls with local asset paths", async () => {
-    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obfronter-test-inline-assets-"));
+    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obhelper-test-inline-assets-"));
     const writer = new ObsidianWriter(async (url) => ({
       ok: url === "https://example.com/inline.jpg",
       status: url === "https://example.com/inline.jpg" ? 200 : 404,
@@ -171,7 +171,7 @@ describe("ObsidianWriter", () => {
   });
 
   it("replaces inline markdown image urls that contain escaped query separators", async () => {
-    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obfronter-test-inline-escaped-"));
+    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obhelper-test-inline-escaped-"));
     const writer = new ObsidianWriter(async (url) => ({
       ok: url === "https://example.com/inline.jpg?format=jpg&name=large",
       status: url === "https://example.com/inline.jpg?format=jpg&name=large" ? 200 : 404,
@@ -208,7 +208,7 @@ describe("ObsidianWriter", () => {
   });
 
   it("stops local image downloads when overall budget is exhausted", async () => {
-    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obfronter-test-image-budget-"));
+    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obhelper-test-image-budget-"));
     const mediaFetch = vi.fn(async () => ({
       ok: false,
       status: 500,
@@ -248,7 +248,7 @@ describe("ObsidianWriter", () => {
   });
 
   it("skips image when image body read times out", async () => {
-    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obfronter-test-image-timeout-"));
+    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obhelper-test-image-timeout-"));
     const writer = new ObsidianWriter(
       async () => ({
         ok: true,

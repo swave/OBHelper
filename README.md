@@ -1,4 +1,4 @@
-# ObFronter
+# OBHelper
 
 Agent-first CLI scaffold for ingesting URL content (X / Weixin / Weibo / generic web pages), extracting main article text, converting to Markdown, and saving into an Obsidian vault.
 
@@ -14,11 +14,11 @@ node dist/cli.js fetch "https://example.com/post" --vault "/path/to/ObsidianVaul
 ```
 
 `npm install` now auto-installs Playwright Chromium for local environments so browser fetch mode works out of the box.
-To skip this (for CI or constrained environments), set `OBFRONTER_SKIP_PLAYWRIGHT_INSTALL=1`.
+To skip this (for CI or constrained environments), set `OBHELPER_SKIP_PLAYWRIGHT_INSTALL=1`.
 
 ## CLI Usage
 ```bash
-obfronter fetch <url> --vault <path> [options]
+obhelper fetch <url> --vault <path> [options]
 ```
 
 Options:
@@ -27,7 +27,7 @@ Options:
 - `--http-mode`: force plain HTTP fetch mode (disables X auto browser mode)
 - `--session-profile-dir <path>`: browser profile dir for authenticated cookies
 - `--browser-channel <name>`: browser channel for fetch browser mode (`chrome`, `chromium`, `msedge`)
-- `--cdp-endpoint <url>`: attach fetch to a running Chrome DevTools endpoint (or set `OBFRONTER_CDP_ENDPOINT`)
+- `--cdp-endpoint <url>`: attach fetch to a running Chrome DevTools endpoint (or set `OBHELPER_CDP_ENDPOINT`)
 - `--cookie-file <path>`: cookie file for fetch (`raw cookie header` or `Netscape cookie file`)
 - `--cookie-env <name>`: env var name that contains cookie header for fetch
 - `--timeout-ms <number>`: fetch timeout
@@ -37,7 +37,7 @@ Options:
 HTTP mode with cookies from env var:
 ```bash
 export X_COOKIE='auth_token=...; ct0=...'
-obfronter fetch "https://x.com/<user>/status/<id>" \
+obhelper fetch "https://x.com/<user>/status/<id>" \
   --vault "/path/to/Vault" \
   --http-mode \
   --cookie-env X_COOKIE
@@ -47,9 +47,9 @@ CDP mode (use your own Chrome session):
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.obfronter/chrome-cdp"
+  --user-data-dir="$HOME/.obhelper/chrome-cdp"
 
-obfronter fetch "https://x.com/<user>/status/<id>" \
+obhelper fetch "https://x.com/<user>/status/<id>" \
   --vault "/path/to/Vault" \
   --cdp-endpoint "http://127.0.0.1:9222"
 ```
@@ -87,7 +87,7 @@ You can run a real-browser E2E check for X extraction via CDP:
 ```bash
 export X_E2E_URL_TEXT="https://x.com/<user>/status/<id>"
 export X_E2E_EXPECT_TEXT="a short phrase expected in markdown"
-export OBFRONTER_CDP_ENDPOINT="http://127.0.0.1:9222"
+export OBHELPER_CDP_ENDPOINT="http://127.0.0.1:9222"
 npm run test:e2e:x
 ```
 

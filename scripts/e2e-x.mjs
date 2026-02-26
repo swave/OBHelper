@@ -3,6 +3,8 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import http from "node:http";
+import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -40,32 +42,82 @@ function assertContains(haystack, needle, label) {
   }
 }
 
+async function fetchJsonWithNodeHttp(url, timeoutMs) {
+  const parsed = new URL(url);
+  const transport = parsed.protocol === "https:" ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const request = transport.request(
+      parsed,
+      {
+        method: "GET",
+        headers: {
+          accept: "application/json"
+        },
+        timeout: timeoutMs
+      },
+      (response) => {
+        const status = response.statusCode ?? 0;
+        let body = "";
+
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          body += chunk;
+        });
+        response.on("end", () => {
+          if (status < 200 || status >= 300) {
+            reject(new Error(`HTTP ${status}`));
+            return;
+          }
+
+          try {
+            resolve(JSON.parse(body));
+          } catch {
+            reject(new Error("Invalid JSON response"));
+          }
+        });
+      }
+    );
+
+    request.on("timeout", () => {
+      request.destroy(new Error(`Timed out after ${timeoutMs}ms`));
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
+
 async function verifyCdpEndpoint(endpoint) {
   if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) {
     return;
   }
 
   const probeUrl = `${endpoint.replace(/\/+$/, "")}/json/version`;
-  let response;
+  let payload;
   try {
-    response = await fetch(probeUrl, {
+    const response = await fetch(probeUrl, {
       headers: {
         accept: "application/json"
       },
       signal: AbortSignal.timeout(5_000)
     });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    payload = await response.json();
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `CDP endpoint probe failed: ${probeUrl} (${detail}). Start Chrome with --remote-debugging-port=9222 and ensure it is reachable from this shell.`
-    );
+    const primaryDetail = error instanceof Error ? error.message : String(error);
+    try {
+      payload = await fetchJsonWithNodeHttp(probeUrl, 5_000);
+    } catch (fallbackError) {
+      const fallbackDetail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      throw new Error(
+        `CDP endpoint probe failed: ${probeUrl} (${primaryDetail}; fallback: ${fallbackDetail}). Start Chrome with --remote-debugging-port=9222 and ensure it is reachable from this shell.`
+      );
+    }
   }
 
-  if (!response.ok) {
-    throw new Error(`CDP endpoint probe failed: ${probeUrl} -> ${response.status}`);
-  }
-
-  const payload = await response.json();
   if (!payload || typeof payload.webSocketDebuggerUrl !== "string") {
     throw new Error(`CDP endpoint probe returned unexpected payload from ${probeUrl}`);
   }
@@ -111,7 +163,7 @@ async function resolveVaultPath() {
     return configured;
   }
 
-  return mkdtemp(path.join(os.tmpdir(), "obfronter-e2e-vault-"));
+  return mkdtemp(path.join(os.tmpdir(), "obhelper-e2e-vault-"));
 }
 
 async function main() {
@@ -121,7 +173,9 @@ async function main() {
 
   const textUrl = requiredEnv("X_E2E_URL_TEXT");
   const textExpected = requiredEnv("X_E2E_EXPECT_TEXT");
-  const cdpEndpoint = optionalEnv("OBFRONTER_CDP_ENDPOINT") ?? "http://127.0.0.1:9222";
+  const cdpEndpoint = optionalEnv("OBHELPER_CDP_ENDPOINT") ??
+    optionalEnv("OBFRONTER_CDP_ENDPOINT") ??
+    "http://127.0.0.1:9222";
   const timeoutMs = Number(optionalEnv("X_E2E_TIMEOUT_MS") ?? "90000");
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error(`Invalid X_E2E_TIMEOUT_MS: ${timeoutMs}`);

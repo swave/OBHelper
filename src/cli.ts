@@ -9,10 +9,10 @@ import type { BrowserChannel } from "./core/types.js";
 import { runFetchCommand } from "./index.js";
 
 function printHelp(): void {
-  const help = `obfronter - URL to Obsidian markdown pipeline
+  const help = `obhelper - URL to Obsidian markdown pipeline
 
 Usage:
-  obfronter fetch <url> --vault <path> [options]
+  obhelper fetch <url> --vault <path> [options]
 
 Options:
   --vault <path>                Obsidian vault root path (or set OBSIDIAN_VAULT_PATH)
@@ -21,7 +21,7 @@ Options:
   --http-mode                   Force plain HTTP fetch mode (disables X default browser mode)
   --session-profile-dir <path>  Browser profile dir for authenticated cookies
   --browser-channel <name>      Browser channel for fetch browser mode (chrome|chromium|msedge)
-  --cdp-endpoint <url>          Chrome DevTools endpoint for attaching to a running browser (or set OBFRONTER_CDP_ENDPOINT)
+  --cdp-endpoint <url>          Chrome DevTools endpoint for attaching to a running browser (or set OBHELPER_CDP_ENDPOINT)
   --cookie-file <path>          Cookie file path (raw header or Netscape format) for fetch requests
   --cookie-env <name>           Env var name containing cookie header for fetch requests
   --timeout-ms <number>         Timeout in milliseconds (fetch default: 20000)
@@ -113,13 +113,13 @@ async function runFetchCli(args: string[]): Promise<void> {
     browserMode: parsed.values["browser-mode"],
     httpMode: parsed.values["http-mode"],
     cdpEndpointFlag: parsed.values["cdp-endpoint"],
-    cdpEndpointEnv: process.env.OBFRONTER_CDP_ENDPOINT,
+    cdpEndpointEnv: process.env.OBHELPER_CDP_ENDPOINT ?? process.env.OBFRONTER_CDP_ENDPOINT,
     sessionProfileDir: parsed.values["session-profile-dir"]
   });
 
   const url = parsed.positionals[0];
   if (!url) {
-    throw new ObfronterError("URL_REQUIRED", "Missing URL. Usage: obfronter fetch <url> --vault <path>");
+    throw new ObfronterError("URL_REQUIRED", "Missing URL. Usage: obhelper fetch <url> --vault <path>");
   }
 
   const vaultPath = parsed.values.vault ?? process.env.OBSIDIAN_VAULT_PATH;

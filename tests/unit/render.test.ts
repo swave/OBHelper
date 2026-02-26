@@ -115,12 +115,12 @@ describe("toNormalizedDocument", () => {
       fetchedAt: "2026-02-26T12:00:00.000Z",
       extracted: {
         title: "Inline Code Tag Test",
-        contentHtml: "<p>Run <code>npm i obfronter</code> to install.</p>",
+        contentHtml: "<p>Run <code>npm i obhelper</code> to install.</p>",
         extractionStatus: "ok"
       }
     });
 
-    expect(normalized.markdownBody).toContain("Run `npm i obfronter` to install.");
+    expect(normalized.markdownBody).toContain("Run `npm i obhelper` to install.");
   });
 
   it("preserves line breaks for weixin-style pre code blocks that use span + br", () => {

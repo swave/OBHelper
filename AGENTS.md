@@ -13,14 +13,14 @@ Store reusable local values in `.env.e2e.local` (do not commit secrets):
 ```bash
 X_E2E_URL_TEXT=https://x.com/<handle>/status/<id>
 X_E2E_EXPECT_TEXT=<expected phrase from real post body>
-OBFRONTER_CDP_ENDPOINT=http://127.0.0.1:9222
+OBHELPER_CDP_ENDPOINT=http://127.0.0.1:9222
 ```
 
 ### Required Validation Gates (In Order)
 
 1. `npm run build`
 2. `npm test`
-3. `env X_E2E_URL_TEXT=... X_E2E_EXPECT_TEXT=... OBFRONTER_CDP_ENDPOINT=http://127.0.0.1:9222 npm run test:e2e:x`
+3. `env X_E2E_URL_TEXT=... X_E2E_EXPECT_TEXT=... OBHELPER_CDP_ENDPOINT=http://127.0.0.1:9222 npm run test:e2e:x`
 
 ### Failure Loop (Mandatory)
 

@@ -114,7 +114,7 @@ function createRecoveredCodeNode(document: Document, codeText: string): HTMLElem
   const code = document.createElement("code");
   code.textContent = codeText;
   pre.append(code);
-  pre.setAttribute("data-obfronter-recovered-code", "true");
+  pre.setAttribute("data-obhelper-recovered-code", "true");
   return pre;
 }
 
@@ -160,7 +160,7 @@ function appendRecoveredCodeBlocks(contentHtml: string, capturedCodeBlocks: Capt
 
   if (unresolved.length > 0) {
     const recoveredSection = [
-      "<section data-obfronter-recovered-code=\"true\">",
+      "<section data-obhelper-recovered-code=\"true\">",
       "<h2>Recovered Code Blocks</h2>",
       ...unresolved.map((block) => `<pre><code>${escapeHtml(block)}</code></pre>`),
       "</section>"

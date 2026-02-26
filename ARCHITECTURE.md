@@ -1,7 +1,7 @@
-# ObFronter Architecture Guide
+# OBHelper Architecture Guide
 
 This document is the implementation guide for the next development phase.
-It describes how ObFronter is structured today, what constraints we keep, and how we evolve it safely.
+It describes how OBHelper is structured today, what constraints we keep, and how we evolve it safely.
 
 ## 1. Goal and Constraints
 
@@ -96,7 +96,7 @@ For any X-fetch/X-extraction/CDP/session change:
 3. Run X E2E with:
    - `X_E2E_URL_TEXT`
    - `X_E2E_EXPECT_TEXT`
-   - `OBFRONTER_CDP_ENDPOINT`
+   - `OBHELPER_CDP_ENDPOINT`
 4. If E2E fails, debug -> minimal fix -> rerun until green.
 5. Do not commit/push X-related code unless all three pass in current branch state.
 

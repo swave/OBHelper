@@ -1,11 +1,11 @@
 {
-  "name": "obfronter",
+  "name": "obhelper",
   "version": "0.1.0",
   "private": true,
   "description": "Agent-first CLI scaffold for extracting web content into Obsidian markdown files",
   "type": "module",
   "bin": {
-    "obfronter": "dist/cli.js"
+    "obhelper": "dist/cli.js"
   },
   "engines": {
     "node": ">=20.11.0"
