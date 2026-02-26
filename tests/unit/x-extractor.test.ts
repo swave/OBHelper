@@ -828,4 +828,46 @@ describe("XExtractor", () => {
     expect(result.contentHtml).not.toContain("<h2><strong>");
     expect(result.contentHtml).not.toContain("<h2><strong><div>");
   });
+
+  it("removes trailing author footer cards that contain profile image and personal link", async () => {
+    const oEmbedFetch = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({})
+    }));
+    const extractor = new XExtractor(
+      oEmbedFetch,
+      async () => undefined,
+      async () => ({
+        ok: false,
+        status: 404,
+        url: "https://example.com",
+        text: async () => ""
+      })
+    );
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/elvissun/status/2025920521871716562",
+      finalUrl: "https://x.com/elvissun/status/2025920521871716562",
+      html: `
+        <html><body><article data-testid="tweet"><div data-testid="tweetText"><a href="https://t.co/DotZ3V6XhJ">https://t.co/DotZ3V6XhJ</a></div></article></body></html>
+      `,
+      statusCode: 200,
+      fetchedAt: "2026-02-25T12:17:00.000Z",
+      linkedPages: [
+        {
+          url: "https://x.com/elvissun/article/2025920521871716562",
+          html: "<html><body><main data-testid=\"twitterArticleReadView\"><h2>Up Next: The One-Person Million-Dollar Company</h2><p>If you want to see how far I take this, follow along.</p><ul><li><a href=\"/elvissun\"><img src=\"https://pbs.twimg.com/profile_images/1886389973236011008/7EZHFw9k_x96.jpg\" alt=\"\" /></a><a href=\"/elvissun\">@elvissun</a> 2x dad building the modern PR stack in public: <a href=\"https://t.co/JcWBKKpG6Y\">http://medialyst.ai</a></li></ul></main></body></html>",
+          title: "X",
+          text: "Up Next: The One-Person Million-Dollar Company"
+        }
+      ]
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.contentHtml).toContain("follow along");
+    expect(result.contentHtml).not.toContain("medialyst.ai");
+    expect(result.contentHtml).not.toContain("profile_images");
+    expect(result.contentHtml).not.toContain("@elvissun");
+  });
 });

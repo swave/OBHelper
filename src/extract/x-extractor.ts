@@ -602,6 +602,51 @@ function isNestedInsideRichListItem(node: Element): boolean {
   return Boolean(nearestListItem && nearestListItem !== node);
 }
 
+function extractArticleHandleFromUrl(url: string): string | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
+
+  const parts = parsed.pathname.split("/").filter((part) => part.length > 0);
+  if (parts.length >= 2 && parts[1] === "article") {
+    return normalizeHandle(parts[0]);
+  }
+
+  return undefined;
+}
+
+function isLikelyAuthorFooterListItem(input: {
+  itemText: string;
+  itemHtml: string;
+  articleHandle?: string;
+}): boolean {
+  const text = normalizeWhitespace(input.itemText);
+  if (text.length === 0) {
+    return false;
+  }
+
+  const htmlLower = input.itemHtml.toLowerCase();
+  const textLower = text.toLowerCase();
+  const hasProfileImage = htmlLower.includes("profile_images") ||
+    /https?:\/\/pbs\.twimg\.com\/profile_images\//i.test(input.itemHtml);
+  const hasProfilePathLink = /href="\/[a-z0-9_]{1,20}"/i.test(input.itemHtml);
+  const hasHandleMention = /@[a-z0-9_]{1,20}/i.test(text);
+  const hasExternalUrl = /https?:\/\/\S+/i.test(text) || /href="https?:\/\//i.test(input.itemHtml);
+  const matchesArticleHandle = Boolean(
+    input.articleHandle &&
+    (textLower.includes(`@${input.articleHandle.toLowerCase()}`) ||
+      new RegExp(`href="/${input.articleHandle}"`, "i").test(input.itemHtml))
+  );
+  const looksLikeBioLine = textLower.includes("building") || textLower.includes("in public");
+
+  return hasProfileImage &&
+    hasProfilePathLink &&
+    (hasHandleMention || hasExternalUrl || matchesArticleHandle || looksLikeBioLine);
+}
+
 function normalizeDraftInlineHtml(node: Element): string {
   const clone = node.cloneNode(true) as Element;
   const allElements = [clone, ...clone.querySelectorAll("*")];
@@ -726,6 +771,7 @@ function tryExtractFromLinkedHtmlRich(page: FetchLinkedPage): ExtractedMainConte
   } catch {
     return undefined;
   }
+  const articleHandle = extractArticleHandleFromUrl(page.url);
 
   const blocks = [...root.querySelectorAll(
     "[data-testid='twitter-article-title'], [data-testid='tweetPhoto'] img, [data-testid='longformRichTextComponent'] li, [data-testid='longformRichTextComponent'] .longform-unordered-list-item, [data-testid='longformRichTextComponent'] .longform-ordered-list-item, [data-testid='longformRichTextComponent'] .longform-unstyled, [data-testid='longformRichTextComponent'] pre, [data-testid='markdown-code-block'] pre, h1, h2, h3, p, blockquote, li, .longform-unordered-list-item, .longform-ordered-list-item, .longform-unstyled, pre, img"
@@ -772,7 +818,11 @@ function tryExtractFromLinkedHtmlRich(page: FetchLinkedPage): ExtractedMainConte
         const itemNode = blocks[index];
         const itemHtml = unwrapSingleDraftBlockWrapper(normalizeDraftInlineHtml(itemNode));
         const itemText = normalizeWhitespace(itemNode.textContent ?? "");
-        if (itemText.length > 0) {
+        if (itemText.length > 0 && !isLikelyAuthorFooterListItem({
+          itemText,
+          itemHtml,
+          articleHandle
+        })) {
           items.push(`<li>${itemHtml.length > 0 ? itemHtml : escapeHtml(itemText)}</li>`);
           excerptParts.push(itemText);
         }
