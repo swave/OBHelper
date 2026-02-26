@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { detectSourcePlatform, isWeixinArticleUrl, isXStatusUrl } from "./url-source.js";
-import type { PipelineInput, PipelineResult } from "./types.js";
+import type { ExtractedMainContent, NormalizedDocument, PipelineInput, PipelineResult } from "./types.js";
 import { toNormalizedDocument } from "../markdown/render.js";
 import type { Fetcher } from "../fetch/fetcher.js";
 import type { DocumentWriter } from "../obsidian/writer.js";
@@ -23,6 +23,130 @@ const pipelineInputSchema = z.object({
     headers: z.record(z.string()).optional()
   })
 });
+
+const DEFAULT_STAGE_TIMEOUT_MS = 20_000;
+const MAX_MARKDOWN_SNIPPET_LENGTH = 12_000;
+
+async function withStageTimeout<T>(stage: string, timeoutMs: number, work: () => Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+
+  return new Promise<T>((resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new ObfronterError(
+          "PIPELINE_STAGE_TIMEOUT",
+          `${stage} timed out after ${timeoutMs}ms. Try --timeout-ms with a larger value.`
+        )
+      );
+    }, timeoutMs);
+
+    void work()
+      .then((value) => resolve(value))
+      .catch((error) => reject(error))
+      .finally(() => {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      });
+  });
+}
+
+function isPipelineStageTimeout(error: unknown): error is ObfronterError {
+  return error instanceof ObfronterError && error.code === "PIPELINE_STAGE_TIMEOUT";
+}
+
+function escapeHtml(raw: string): string {
+  return raw
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function inferFallbackTitle(html: string, fallbackUrl: URL): string {
+  const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1]?.trim();
+  if (ogTitle && ogTitle.length > 0) {
+    return ogTitle;
+  }
+
+  const pageTitle = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, " ").trim();
+  if (pageTitle && pageTitle.length > 0) {
+    return pageTitle;
+  }
+
+  return fallbackUrl.hostname;
+}
+
+function stripHtmlToMarkdownSnippet(html: string): string {
+  const snippet = html
+    .slice(0, MAX_MARKDOWN_SNIPPET_LENGTH)
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<br\b[^>]*>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, "\"")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+
+  return snippet;
+}
+
+function buildExtractionTimeoutFallback(input: {
+  finalUrl: string;
+  html: string;
+  fetchedAt: string;
+}): ExtractedMainContent {
+  const finalUrl = new URL(input.finalUrl);
+  return {
+    title: inferFallbackTitle(input.html, finalUrl),
+    contentHtml: [
+      "<p>Extraction timed out for this page. Partial fallback content is shown below.</p>",
+      `<p><a href="${escapeHtml(input.finalUrl)}">Open source URL</a></p>`
+    ].join(""),
+    excerpt: "Extraction timed out for this page.",
+    extractionStatus: "blocked"
+  };
+}
+
+function buildNormalizationTimeoutFallback(input: {
+  sourceUrl: string;
+  sourcePlatform: PipelineResult["sourcePlatform"];
+  fetchedAt: string;
+  extracted: ExtractedMainContent;
+}): NormalizedDocument {
+  const snippet = stripHtmlToMarkdownSnippet(input.extracted.contentHtml);
+  const bodyLines = [
+    "Markdown conversion timed out for this page.",
+    "",
+    snippet.length > 0 ? snippet : "(No fallback snippet available)",
+    "",
+    `[Open source URL](${input.sourceUrl})`
+  ];
+
+  return {
+    sourceUrl: input.sourceUrl,
+    sourcePlatform: input.sourcePlatform,
+    fetchedAt: input.fetchedAt,
+    title: input.extracted.title.trim() || "Untitled",
+    markdownBody: bodyLines.join("\n"),
+    byline: input.extracted.byline,
+    excerpt: input.extracted.excerpt,
+    publishedAt: input.extracted.publishedAt,
+    extractionStatus: input.extracted.extractionStatus,
+    authorHandle: input.extracted.authorHandle,
+    statusId: input.extracted.statusId,
+    mediaUrls: input.extracted.mediaUrls
+  };
+}
 
 export async function runPipeline(
   input: PipelineInput,
@@ -50,26 +174,61 @@ export async function runPipeline(
     );
   }
 
-  const fetched = await dependencies.fetcher.fetch({
-    url: parsedUrl.toString(),
-    timeoutMs: parsed.fetch.timeoutMs,
-    sessionProfileDir: parsed.fetch.sessionProfileDir,
-    browserChannel: parsed.fetch.browserChannel,
-    cdpEndpoint: parsed.fetch.cdpEndpoint,
-    headers: parsed.fetch.headers
-  });
+  const stageTimeoutMs = parsed.fetch.timeoutMs ?? DEFAULT_STAGE_TIMEOUT_MS;
+
+  const fetched = await withStageTimeout("Fetch stage", stageTimeoutMs + 5_000, () =>
+    dependencies.fetcher.fetch({
+      url: parsedUrl.toString(),
+      timeoutMs: parsed.fetch.timeoutMs,
+      sessionProfileDir: parsed.fetch.sessionProfileDir,
+      browserChannel: parsed.fetch.browserChannel,
+      cdpEndpoint: parsed.fetch.cdpEndpoint,
+      headers: parsed.fetch.headers
+    })
+  );
 
   const extractor = dependencies.extractors.resolve(sourcePlatform);
-  const extracted = await extractor.extract(fetched);
+  let extracted: ExtractedMainContent;
+  try {
+    extracted = await withStageTimeout("Extraction stage", stageTimeoutMs, () => extractor.extract(fetched));
+  } catch (error) {
+    if (!isPipelineStageTimeout(error)) {
+      throw error;
+    }
 
-  const normalized = toNormalizedDocument({
-    sourceUrl: fetched.finalUrl,
-    sourcePlatform,
-    fetchedAt: fetched.fetchedAt,
-    extracted
-  });
+    extracted = buildExtractionTimeoutFallback({
+      finalUrl: fetched.finalUrl,
+      html: fetched.html,
+      fetchedAt: fetched.fetchedAt
+    });
+  }
 
-  const saved = await dependencies.writer.write(normalized, parsed.write);
+  let normalized: NormalizedDocument;
+  try {
+    normalized = await withStageTimeout("Markdown stage", stageTimeoutMs, async () =>
+      toNormalizedDocument({
+        sourceUrl: fetched.finalUrl,
+        sourcePlatform,
+        fetchedAt: fetched.fetchedAt,
+        extracted
+      })
+    );
+  } catch (error) {
+    if (!isPipelineStageTimeout(error)) {
+      throw error;
+    }
+
+    normalized = buildNormalizationTimeoutFallback({
+      sourceUrl: fetched.finalUrl,
+      sourcePlatform,
+      fetchedAt: fetched.fetchedAt,
+      extracted
+    });
+  }
+
+  const saved = await withStageTimeout("Write stage", stageTimeoutMs + 20_000, () =>
+    dependencies.writer.write(normalized, parsed.write)
+  );
 
   return {
     sourcePlatform,

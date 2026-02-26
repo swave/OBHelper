@@ -9,6 +9,8 @@ const INVALID_FILENAME_CHARS = /[\\/:*?"<>|]/g;
 const MULTISPACE = /\s+/g;
 const MAX_FILE_NAME_LENGTH = 90;
 const MAX_LOCAL_IMAGES = 12;
+const IMAGE_FETCH_TIMEOUT_MS = 8_000;
+const IMAGE_DOWNLOAD_BUDGET_MS = 30_000;
 
 interface DownloadResponseLike {
   ok: boolean;
@@ -32,11 +34,24 @@ const CONTENT_TYPE_EXTENSION: Record<string, string> = {
   "image/bmp": "bmp"
 };
 
+function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    void work
+      .then((value) => resolve(value))
+      .catch((error) => reject(error))
+      .finally(() => clearTimeout(timer));
+  });
+}
+
 function defaultMediaFetch(url: string): Promise<DownloadResponseLike> {
   return fetch(url, {
     method: "GET",
     redirect: "follow",
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
     headers: {
       accept: "image/*,*/*;q=0.8",
       "user-agent":
@@ -183,9 +198,15 @@ export interface DocumentWriter {
   write(document: NormalizedDocument, options: WriteOptions): Promise<SaveResult>;
 }
 
+interface WriterTimeoutOptions {
+  imageFetchTimeoutMs?: number;
+  imageDownloadBudgetMs?: number;
+}
+
 export class ObsidianWriter implements DocumentWriter {
   public constructor(
-    private readonly mediaFetch: MediaFetch = defaultMediaFetch
+    private readonly mediaFetch: MediaFetch = defaultMediaFetch,
+    private readonly timeoutOptions: WriterTimeoutOptions = {}
   ) {}
 
   private async downloadLocalImages(input: {
@@ -203,8 +224,15 @@ export class ObsidianWriter implements DocumentWriter {
     const assetsDirPath = path.join(noteDir, assetsDirName);
     const downloaded: Array<{ sourceUrl: string; relativePath: string }> = [];
     let savedIndex = 1;
+    const imageFetchTimeoutMs = this.timeoutOptions.imageFetchTimeoutMs ?? IMAGE_FETCH_TIMEOUT_MS;
+    const imageDownloadBudgetMs = this.timeoutOptions.imageDownloadBudgetMs ?? IMAGE_DOWNLOAD_BUDGET_MS;
+    const downloadStartedAt = Date.now();
 
     for (const mediaUrl of mediaUrls) {
+      if (Date.now() - downloadStartedAt >= imageDownloadBudgetMs) {
+        break;
+      }
+
       let response: DownloadResponseLike;
       try {
         response = await this.mediaFetch(mediaUrl);
@@ -229,7 +257,7 @@ export class ObsidianWriter implements DocumentWriter {
 
       let bytes: Uint8Array;
       try {
-        bytes = new Uint8Array(await response.arrayBuffer());
+        bytes = new Uint8Array(await withTimeout(response.arrayBuffer(), imageFetchTimeoutMs));
       } catch {
         continue;
       }

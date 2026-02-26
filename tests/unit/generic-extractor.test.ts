@@ -22,4 +22,29 @@ describe("GenericExtractor", () => {
     expect(result.title).toContain("Fixture Article");
     expect(result.contentHtml).toContain("deterministic fixture paragraph");
   });
+
+  it("extracts content even when page includes heavy non-content blocks", async () => {
+    const largeNoise = "x".repeat(200_000);
+    const html = [
+      "<!doctype html>",
+      "<html><head><title>Heavy Page</title>",
+      `<script>${largeNoise}</script>`,
+      `<style>${largeNoise}</style>`,
+      "</head><body>",
+      "<article><h1>Heavy Page</h1><p>Real content survives cleanup.</p></article>",
+      "</body></html>"
+    ].join("");
+
+    const extractor = new GenericExtractor();
+    const result = await extractor.extract({
+      requestedUrl: "https://example.com/heavy",
+      finalUrl: "https://example.com/heavy",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-01-01T10:00:00.000Z"
+    });
+
+    expect(result.title).toContain("Heavy Page");
+    expect(result.contentHtml).toContain("Real content survives cleanup.");
+  });
 });

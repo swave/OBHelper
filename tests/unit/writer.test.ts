@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ObsidianWriter, sanitizeFileName } from "../../src/obsidian/writer.js";
 
@@ -205,5 +205,83 @@ describe("ObsidianWriter", () => {
       "utf8"
     );
     expect(image).toBe("inline-jpg-escaped");
+  });
+
+  it("stops local image downloads when overall budget is exhausted", async () => {
+    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obfronter-test-image-budget-"));
+    const mediaFetch = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      headers: {
+        get: () => null
+      },
+      arrayBuffer: async () => new ArrayBuffer(0)
+    }));
+
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValueOnce(1_000);
+    nowSpy.mockReturnValueOnce(2_000);
+    nowSpy.mockReturnValue(40_000);
+
+    const writer = new ObsidianWriter(mediaFetch);
+    await writer.write(
+      {
+        sourceUrl: "https://example.com/post",
+        sourcePlatform: "generic",
+        fetchedAt: "2026-01-01T10:00:00.000Z",
+        title: "Budget Note",
+        markdownBody: "Body",
+        mediaUrls: [
+          "https://example.com/1.jpg",
+          "https://example.com/2.jpg",
+          "https://example.com/3.jpg"
+        ]
+      },
+      {
+        vaultPath,
+        subdirectory: "Inbox"
+      }
+    );
+
+    expect(mediaFetch).toHaveBeenCalledTimes(1);
+    nowSpy.mockRestore();
+  });
+
+  it("skips image when image body read times out", async () => {
+    const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obfronter-test-image-timeout-"));
+    const writer = new ObsidianWriter(
+      async () => ({
+        ok: true,
+        status: 200,
+        headers: {
+          get: (name: string) => (name.toLowerCase() === "content-type" ? "image/png" : null)
+        },
+        arrayBuffer: async () => new Promise<ArrayBuffer>(() => {
+          // Intentionally unresolved to simulate a stalled image stream.
+        })
+      }),
+      {
+        imageFetchTimeoutMs: 20,
+        imageDownloadBudgetMs: 200
+      }
+    );
+
+    const result = await writer.write(
+      {
+        sourceUrl: "https://example.com/post",
+        sourcePlatform: "generic",
+        fetchedAt: "2026-01-01T10:00:00.000Z",
+        title: "Image Timeout Note",
+        markdownBody: "Body",
+        mediaUrls: ["https://example.com/slow.png"]
+      },
+      {
+        vaultPath,
+        subdirectory: "Inbox"
+      }
+    );
+    const noteContent = await readFile(result.outputPath, "utf8");
+
+    expect(noteContent).not.toContain("Image Timeout Note_assets");
   });
 });

@@ -5,11 +5,19 @@ import { ObfronterError } from "../core/errors.js";
 import type { ExtractedMainContent, FetchResult } from "../core/types.js";
 import type { ContentExtractor } from "./extractor.js";
 
+function stripNonContentBlocks(html: string): string {
+  return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, "")
+    .replace(/<template\b[^>]*>[\s\S]*?<\/template>/gi, "");
+}
+
 export class GenericExtractor implements ContentExtractor {
   public readonly id = "generic";
 
   public async extract(input: FetchResult): Promise<ExtractedMainContent> {
-    const dom = new JSDOM(input.html, { url: input.finalUrl });
+    const dom = new JSDOM(stripNonContentBlocks(input.html), { url: input.finalUrl });
     const article = new Readability(dom.window.document).parse();
 
     if (!article?.content || !article?.title) {

@@ -41,6 +41,16 @@ class FakeExtractor implements ContentExtractor {
   }
 }
 
+class HangingExtractor implements ContentExtractor {
+  public readonly id = "hanging-extractor";
+
+  public async extract(): Promise<ExtractedMainContent> {
+    return new Promise<ExtractedMainContent>(() => {
+      // Intentionally never resolves to simulate parser deadlock/heavy pages.
+    });
+  }
+}
+
 class FakeRegistry implements ExtractorResolver {
   public resolve(sourcePlatform: SourcePlatform): ContentExtractor {
     expect(sourcePlatform).toBe("x");
@@ -122,5 +132,42 @@ describe("runPipeline", () => {
         }
       )
     ).rejects.toThrow("Weixin provider currently supports only article URLs");
+  });
+
+  it("falls back when extraction stage times out", async () => {
+    const writer: DocumentWriter = {
+      write: async (document) => ({
+        outputPath: `/vault/Inbox/${document.title}.md`,
+        created: true,
+        fileName: `${document.title}.md`
+      })
+    };
+    const extractorRegistry: ExtractorResolver = {
+      resolve: (sourcePlatform) => {
+        expect(sourcePlatform).toBe("generic");
+        return new HangingExtractor();
+      }
+    };
+
+    const result = await runPipeline(
+      {
+        url: "https://example.com/post",
+        write: {
+          vaultPath: "/vault",
+          subdirectory: "Inbox"
+        },
+        fetch: {
+          timeoutMs: 15
+        }
+      },
+      {
+        fetcher: new FakeFetcher(),
+        extractors: extractorRegistry,
+        writer
+      }
+    );
+
+    expect(result.normalized.markdownBody).toContain("Extraction timed out");
+    expect(result.normalized.markdownBody).toContain("[Open source URL](https://example.com/post)");
   });
 });
