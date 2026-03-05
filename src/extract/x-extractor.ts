@@ -257,9 +257,36 @@ function buildBlockedHtml(finalUrl: string, reason: string): string {
   ].join("");
 }
 
+function isGenericXTitle(input: string): boolean {
+  const normalized = input.toLowerCase();
+  if (normalized === "x" || normalized === "twitter") {
+    return true;
+  }
+
+  if (/^(x|twitter)\s*\/\s*/i.test(normalized)) {
+    return true;
+  }
+
+  return false;
+}
+
+function normalizeFallbackTitle(input: string | undefined): string | undefined {
+  if (!input) {
+    return undefined;
+  }
+
+  const normalized = normalizeWhitespace(input).replace(/^\(\d+\)\s*/, "").trim();
+  if (normalized.length === 0 || isGenericXTitle(normalized)) {
+    return undefined;
+  }
+
+  return normalized;
+}
+
 function buildTitle(input: { fallbackTitle?: string; authorHandle?: string; statusId?: string; blocked: boolean }): string {
-  if (input.fallbackTitle) {
-    return input.blocked ? `${input.fallbackTitle} (Blocked)` : input.fallbackTitle;
+  const fallbackTitle = normalizeFallbackTitle(input.fallbackTitle);
+  if (fallbackTitle) {
+    return input.blocked ? `${fallbackTitle} (Blocked)` : fallbackTitle;
   }
 
   const handlePrefix = input.authorHandle ? `@${input.authorHandle} ` : "";
@@ -507,11 +534,12 @@ function cleanLinkedTitle(rawTitle: string | undefined): string | undefined {
   }
 
   const cleaned = normalizeWhitespace(rawTitle)
+    .replace(/^\(\d+\)\s*/, "")
     .replace(/\s*[|/]\s*x$/i, "")
     .replace(/\s+on x$/i, "")
     .trim();
 
-  if (!cleaned || cleaned.toLowerCase() === "x") {
+  if (!cleaned || isGenericXTitle(cleaned)) {
     return undefined;
   }
 

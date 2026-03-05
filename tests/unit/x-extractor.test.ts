@@ -39,6 +39,39 @@ describe("XExtractor", () => {
     expect(oEmbedFetch).not.toHaveBeenCalled();
   });
 
+  it("ignores generic tab titles like '(1) X' and falls back to status-based title", async () => {
+    const extractor = new XExtractor(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({})
+    }));
+    const html = `
+      <html>
+        <head>
+          <meta property="og:title" content="(1) X" />
+        </head>
+        <body>
+          <article data-testid="tweet">
+            <div data-testid="tweetText">
+              <span>Short body from X.</span>
+            </div>
+          </article>
+        </body>
+      </html>
+    `;
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/systematicls/status/2028814227004395561",
+      finalUrl: "https://x.com/systematicls/status/2028814227004395561",
+      html,
+      statusCode: 200,
+      fetchedAt: "2026-03-05T10:00:00.000Z"
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.title).toBe("X post @systematicls status 2028814227004395561");
+  });
+
   it("returns blocked-note extraction for login wall pages", async () => {
     const fixturePath = path.join(process.cwd(), "tests/fixtures/x_blocked.html");
     const html = await readFile(fixturePath, "utf8");
@@ -620,6 +653,45 @@ describe("XExtractor", () => {
     expect(result.extractionStatus).toBe("ok");
     expect(result.title).toContain("OpenClaw + Codex/ClaudeCode Agent Swarm");
     expect(result.contentHtml).toContain("Codex or Claude Code directly anymore.");
+  });
+
+  it("drops notification-count tab title '(1) X' for linked article title selection", async () => {
+    const oEmbedFetch = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({})
+    }));
+    const extractor = new XExtractor(
+      oEmbedFetch,
+      async () => undefined,
+      async () => ({
+        ok: false,
+        status: 404,
+        url: "https://example.com",
+        text: async () => ""
+      })
+    );
+
+    const result = await extractor.extract({
+      requestedUrl: "https://x.com/systematicls/status/2028814227004395561",
+      finalUrl: "https://x.com/systematicls/status/2028814227004395561",
+      html: `
+        <html><body><article data-testid="tweet"><div data-testid="tweetText"><a href="https://t.co/DotZ3V6XhJ">https://t.co/DotZ3V6XhJ</a></div></article></body></html>
+      `,
+      statusCode: 200,
+      fetchedAt: "2026-03-05T10:01:00.000Z",
+      linkedPages: [
+        {
+          url: "https://x.com/systematicls/article/2028814227004395561",
+          html: "<html><body><main><div data-testid=\"twitter-article-title\">How To Be A World-Class Agentic Engineer</div><div class=\"longform-unstyled\">Introduction paragraph.</div></main></body></html>",
+          title: "(1) X",
+          text: "Introduction paragraph."
+        }
+      ]
+    });
+
+    expect(result.extractionStatus).toBe("ok");
+    expect(result.title).toBe("How To Be A World-Class Agentic Engineer");
   });
 
   it("preserves bold and list semantics from rich linked article html", async () => {
