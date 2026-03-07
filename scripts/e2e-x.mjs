@@ -27,6 +27,20 @@ function optionalEnv(name) {
   return value && value.length > 0 ? value : undefined;
 }
 
+function isLoopbackHost(hostname) {
+  const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return normalized === "127.0.0.1" || normalized === "::1" || normalized === "localhost";
+}
+
+function shouldAutoLaunchLocalCdp(endpoint) {
+  try {
+    const parsed = new URL(endpoint);
+    return (parsed.protocol === "http:" || parsed.protocol === "ws:") && isLoopbackHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function parseOutputPath(stdout) {
   const line = stdout.split(/\r?\n/).find((entry) => entry.startsWith("output_path="));
   if (!line) {
@@ -138,6 +152,9 @@ async function runFetchCase(input) {
     String(input.timeoutMs),
     "--overwrite"
   ];
+  if (input.cdpAutoLaunch) {
+    args.push("--cdp-auto-launch");
+  }
 
   const { stdout, stderr } = await execFileAsync("node", args, {
     cwd: repoRoot,
@@ -184,13 +201,17 @@ async function main() {
   const linkOnlyUrl = optionalEnv("X_E2E_URL_LINK_ONLY");
   const linkExpected = optionalEnv("X_E2E_EXPECT_LINK");
   const vaultPath = await resolveVaultPath();
+  const cdpAutoLaunch = shouldAutoLaunchLocalCdp(cdpEndpoint);
 
-  await verifyCdpEndpoint(cdpEndpoint);
+  if (!cdpAutoLaunch) {
+    await verifyCdpEndpoint(cdpEndpoint);
+  }
 
   const textResult = await runFetchCase({
     url: textUrl,
     subdir: "E2E-X-Text",
     cdpEndpoint,
+    cdpAutoLaunch,
     timeoutMs,
     vaultPath
   });
@@ -201,6 +222,7 @@ async function main() {
       url: linkOnlyUrl,
       subdir: "E2E-X-LinkOnly",
       cdpEndpoint,
+      cdpAutoLaunch,
       timeoutMs,
       vaultPath
     });

@@ -18,7 +18,8 @@ To skip this (for CI or constrained environments), set `OBHELPER_SKIP_PLAYWRIGHT
 
 ## CLI Usage
 ```bash
-obhelper fetch <url> --vault <path> [options]
+obhelper fetch <url> [--vault <path>] [options]
+obhelper settings <subcommand>
 ```
 
 Options:
@@ -28,11 +29,40 @@ Options:
 - `--session-profile-dir <path>`: browser profile dir for authenticated cookies
 - `--browser-channel <name>`: browser channel for fetch browser mode (`chrome`, `chromium`, `msedge`)
 - `--cdp-endpoint <url>`: attach fetch to a running Chrome DevTools endpoint (or set `OBHELPER_CDP_ENDPOINT`)
+- `--cdp-auto-launch`: if a local CDP endpoint is unavailable, open a dedicated Chrome debug profile and retry
+- `--no-cdp-auto-launch`: disable a stored `cdp-auto-launch` default for a single fetch
 - `--cookie-file <path>`: cookie file for fetch (`raw cookie header` or `Netscape cookie file`)
 - `--cookie-env <name>`: env var name that contains cookie header for fetch
 - `--timeout-ms <number>`: fetch timeout
 - `--overwrite`: overwrite existing target file
 - `--header <k:v>`: repeatable custom HTTP header
+
+Persistent local defaults:
+- `obhelper settings list`
+- `obhelper settings get <key>`
+- `obhelper settings set <key> <value>`
+- `obhelper settings unset <key>`
+- `obhelper settings path`
+
+Available keys:
+- `vault`
+- `subdir`
+- `session-profile-dir`
+- `browser-channel`
+- `cdp-endpoint`
+- `cdp-auto-launch`
+- `timeout-ms`
+
+Fetch resolves defaults in this order: CLI flag, then environment variable, then stored setting.
+
+Example:
+```bash
+obhelper settings set vault "/path/to/Vault"
+obhelper settings set cdp-endpoint "http://127.0.0.1:9222"
+obhelper settings set cdp-auto-launch true
+
+obhelper fetch "https://x.com/<user>/status/<id>"
+```
 
 HTTP mode with cookies from env var:
 ```bash
@@ -51,8 +81,11 @@ CDP mode (use your own Chrome session):
 
 obhelper fetch "https://x.com/<user>/status/<id>" \
   --vault "/path/to/Vault" \
+  --cdp-auto-launch \
   --cdp-endpoint "http://127.0.0.1:9222"
 ```
+
+`--cdp-auto-launch` currently supports only local CDP endpoints and opens a dedicated macOS Google Chrome profile at `~/.obhelper/chrome-cdp`.
 
 ## Architecture
 See the full development blueprint in [ARCHITECTURE.md](./ARCHITECTURE.md).
@@ -105,6 +138,7 @@ Some pages require login, anti-bot checks, or dynamic rendering. The scaffold in
 - Defaults to browser mode for X and uses `chrome` browser channel by default.
 - If direct HTML extraction is blocked, it attempts a public oEmbed fallback before writing a blocked note.
 - You can attach fetch to a manually opened Chrome instance with `--cdp-endpoint`.
+- You can add `--cdp-auto-launch` to auto-open a dedicated local Chrome debug profile when the local CDP endpoint is down.
 - For link-only posts (for example `t.co` only), it adds expanded destination links when resolvable.
 
 ## Weixin Provider (v1)

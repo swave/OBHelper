@@ -1,3 +1,8 @@
+import { spawn } from "node:child_process";
+import { mkdir } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { ObfronterError } from "../core/errors.js";
 import { detectSourcePlatform, isXStatusUrl } from "../core/url-source.js";
 import type { CapturedCodeBlock, FetchLinkedPage, FetchOptions, FetchResult } from "../core/types.js";
@@ -39,8 +44,15 @@ interface CdpVersionResponse {
 }
 
 type FetchCdpVersion = (endpointURL: string, timeoutMs: number) => Promise<CdpVersionResponse | undefined>;
+type EnsureCdpEndpoint = (input: {
+  endpointURL: string;
+  timeoutMs: number;
+  autoLaunch: boolean;
+  fetchCdpVersion: FetchCdpVersion;
+}) => Promise<void>;
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_CDP_LAUNCH_PROFILE_DIR = path.join(os.homedir(), ".obhelper", "chrome-cdp");
 
 function normalizeCapturedCodeText(raw: string): string {
   return raw
@@ -259,6 +271,151 @@ async function defaultFetchCdpVersion(endpointURL: string, timeoutMs: number): P
     };
   } catch {
     return undefined;
+  }
+}
+
+function normalizeLoopbackHostname(hostname: string): string {
+  return hostname.replace(/^\[|\]$/g, "").toLowerCase();
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = normalizeLoopbackHostname(hostname);
+  return normalized === "127.0.0.1" || normalized === "::1" || normalized === "localhost";
+}
+
+function toLocalCdpLaunchTarget(endpointURL: string): { port: number; probeEndpointURL: string } | undefined {
+  const parsed = tryParseUrl(endpointURL);
+  if (!parsed) {
+    return undefined;
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "ws:") {
+    return undefined;
+  }
+
+  if (!isLoopbackHostname(parsed.hostname)) {
+    return undefined;
+  }
+
+  const port = Number(parsed.port);
+  if (!Number.isInteger(port) || port <= 0) {
+    return undefined;
+  }
+
+  const normalizedHost = normalizeLoopbackHostname(parsed.hostname);
+  const probeHost = normalizedHost.includes(":") ? `[${normalizedHost}]` : normalizedHost;
+  return {
+    port,
+    probeEndpointURL: `http://${probeHost}:${port}`
+  };
+}
+
+async function launchChromeForLocalCdp(port: number): Promise<void> {
+  if (process.platform !== "darwin") {
+    throw new ObfronterError(
+      "CDP_AUTO_LAUNCH_UNSUPPORTED",
+      "--cdp-auto-launch currently supports only macOS local Google Chrome."
+    );
+  }
+
+  await mkdir(DEFAULT_CDP_LAUNCH_PROFILE_DIR, { recursive: true });
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      "open",
+      [
+        "-na",
+        "Google Chrome",
+        "--args",
+        `--remote-debugging-address=127.0.0.1`,
+        `--remote-debugging-port=${port}`,
+        `--user-data-dir=${DEFAULT_CDP_LAUNCH_PROFILE_DIR}`,
+        "--no-first-run",
+        "--no-default-browser-check",
+        "about:blank"
+      ],
+      {
+        detached: true,
+        stdio: "ignore"
+      }
+    );
+
+    child.once("error", (error) => {
+      reject(
+        new ObfronterError(
+          "CDP_AUTO_LAUNCH_FAILED",
+          `Failed to launch Google Chrome for CDP mode (${summarizeError(error)}).`
+        )
+      );
+    });
+    child.once("spawn", () => {
+      child.unref();
+      resolve();
+    });
+  });
+}
+
+async function waitForCdpVersion(
+  endpointURL: string,
+  timeoutMs: number,
+  fetchCdpVersion: FetchCdpVersion
+): Promise<CdpVersionResponse | undefined> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    const version = await fetchCdpVersion(endpointURL, timeoutMs);
+    if (version?.webSocketDebuggerUrl?.trim()) {
+      return version;
+    }
+
+    if (Date.now() >= deadline) {
+      break;
+    }
+
+    await sleep(250);
+  }
+
+  return undefined;
+}
+
+async function defaultEnsureCdpEndpoint(input: {
+  endpointURL: string;
+  timeoutMs: number;
+  autoLaunch: boolean;
+  fetchCdpVersion: FetchCdpVersion;
+}): Promise<void> {
+  if (!input.autoLaunch) {
+    return;
+  }
+
+  const launchTarget = toLocalCdpLaunchTarget(input.endpointURL);
+  if (!launchTarget) {
+    throw new ObfronterError(
+      "CDP_AUTO_LAUNCH_UNSUPPORTED",
+      "--cdp-auto-launch supports only local http/ws CDP endpoints such as http://127.0.0.1:9222."
+    );
+  }
+
+  const existingVersion = await input.fetchCdpVersion(
+    launchTarget.probeEndpointURL,
+    Math.min(input.timeoutMs, 5_000)
+  );
+  if (existingVersion?.webSocketDebuggerUrl?.trim()) {
+    return;
+  }
+
+  await launchChromeForLocalCdp(launchTarget.port);
+
+  const readyVersion = await waitForCdpVersion(
+    launchTarget.probeEndpointURL,
+    Math.max(1_500, Math.min(input.timeoutMs, 15_000)),
+    input.fetchCdpVersion
+  );
+  if (!readyVersion?.webSocketDebuggerUrl?.trim()) {
+    throw new ObfronterError(
+      "CDP_AUTO_LAUNCH_FAILED",
+      `Launched Google Chrome, but Chrome DevTools did not become ready at ${launchTarget.probeEndpointURL}.`
+    );
   }
 }
 
@@ -907,7 +1064,8 @@ export class CdpFetcher implements Fetcher {
 
   public constructor(
     private readonly loadPlaywright: () => Promise<PlaywrightLike> = defaultLoadPlaywright,
-    private readonly fetchCdpVersion: FetchCdpVersion = defaultFetchCdpVersion
+    private readonly fetchCdpVersion: FetchCdpVersion = defaultFetchCdpVersion,
+    private readonly ensureCdpEndpoint: EnsureCdpEndpoint = defaultEnsureCdpEndpoint
   ) {}
 
   public async fetch(options: FetchOptions): Promise<FetchResult> {
@@ -920,6 +1078,13 @@ export class CdpFetcher implements Fetcher {
     }
 
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    await this.ensureCdpEndpoint({
+      endpointURL: cdpEndpoint,
+      timeoutMs,
+      autoLaunch: Boolean(options.cdpAutoLaunch),
+      fetchCdpVersion: this.fetchCdpVersion
+    });
+
     const playwright = await this.loadPlaywright();
 
     const endpointCandidates: string[] = [cdpEndpoint];

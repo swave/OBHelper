@@ -17,6 +17,7 @@ export interface FetchCommandInput {
   sessionProfileDir?: string;
   browserChannel?: BrowserChannel;
   cdpEndpoint?: string;
+  cdpAutoLaunch?: boolean;
   overwrite?: boolean;
   headers?: Record<string, string>;
 }
@@ -73,6 +74,7 @@ export async function runFetchCommand(
         sessionProfileDir: input.sessionProfileDir,
         browserChannel,
         cdpEndpoint,
+        cdpAutoLaunch: input.cdpAutoLaunch,
         headers: input.headers
       }
     },

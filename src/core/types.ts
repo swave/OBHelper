@@ -7,6 +7,7 @@ export interface FetchOptions {
   sessionProfileDir?: string;
   browserChannel?: BrowserChannel;
   cdpEndpoint?: string;
+  cdpAutoLaunch?: boolean;
   headers?: Record<string, string>;
 }
 

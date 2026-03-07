@@ -20,6 +20,7 @@ const pipelineInputSchema = z.object({
     sessionProfileDir: z.string().optional(),
     browserChannel: z.enum(["chrome", "chromium", "msedge"]).optional(),
     cdpEndpoint: z.string().optional(),
+    cdpAutoLaunch: z.boolean().optional(),
     headers: z.record(z.string()).optional()
   })
 });
@@ -183,6 +184,7 @@ export async function runPipeline(
       sessionProfileDir: parsed.fetch.sessionProfileDir,
       browserChannel: parsed.fetch.browserChannel,
       cdpEndpoint: parsed.fetch.cdpEndpoint,
+      cdpAutoLaunch: parsed.fetch.cdpAutoLaunch,
       headers: parsed.fetch.headers
     })
   );

@@ -73,6 +73,55 @@ describe("CdpFetcher", () => {
     });
   });
 
+  it("ensures the cdp endpoint before connecting when auto launch is enabled", async () => {
+    const goto = vi.fn(async () => ({
+      status: () => 200
+    }));
+    const content = vi.fn(async () => "<html><body>ok</body></html>");
+    const pageUrl = vi.fn(() => "https://x.com/test/status/1");
+    const closePage = vi.fn(async () => undefined);
+    const waitForSelector = vi.fn(async () => undefined);
+    const evaluate = vi.fn(async () => []);
+    const newPage = vi.fn(async () => ({
+      goto,
+      waitForSelector,
+      evaluate,
+      content,
+      url: pageUrl,
+      close: closePage
+    }));
+
+    const closeBrowser = vi.fn(async () => undefined);
+    const connectOverCDP = vi.fn(async () => ({
+      contexts: () => [{ newPage }],
+      close: closeBrowser
+    }));
+    const loadPlaywright = vi.fn(async () => ({
+      chromium: {
+        connectOverCDP
+      }
+    }));
+    const fetchCdpVersion = vi.fn(async () => undefined);
+    const ensureCdpEndpoint = vi.fn(async () => undefined);
+
+    const fetcher = new CdpFetcher(loadPlaywright, fetchCdpVersion, ensureCdpEndpoint);
+    await fetcher.fetch({
+      url: "https://x.com/test/status/1",
+      cdpEndpoint: "http://127.0.0.1:9222",
+      cdpAutoLaunch: true,
+      timeoutMs: 12_345
+    });
+
+    expect(ensureCdpEndpoint).toHaveBeenCalledWith({
+      endpointURL: "http://127.0.0.1:9222",
+      timeoutMs: 12_345,
+      autoLaunch: true,
+      fetchCdpVersion
+    });
+    expect(connectOverCDP).toHaveBeenCalledWith("http://127.0.0.1:9222");
+    expect(closeBrowser).toHaveBeenCalledTimes(1);
+  });
+
   it("fails when browser context is unavailable", async () => {
     const closeBrowser = vi.fn(async () => undefined);
     const loadPlaywright = vi.fn(async () => ({

@@ -84,4 +84,32 @@ describe("runFetchCommand", () => {
     expect(result.sourcePlatform).toBe("x");
     expect(result.saved.outputPath).toContain("mock.md");
   });
+
+  it("passes cdp auto launch through to fetch options", async () => {
+    const fakeFetcher = new FakeFetcher();
+    const createDependencies = vi.fn(() => ({
+      fetcher: fakeFetcher,
+      extractors: new FakeRegistry(),
+      writer: new FakeWriter()
+    }));
+
+    await runFetchCommand(
+      {
+        url: "https://x.com/test/status/123",
+        vaultPath: "/tmp/vault",
+        cdpEndpoint: "http://127.0.0.1:9222",
+        cdpAutoLaunch: true
+      },
+      {
+        createDependencies
+      }
+    );
+
+    expect(fakeFetcher.fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cdpEndpoint: "http://127.0.0.1:9222",
+        cdpAutoLaunch: true
+      })
+    );
+  });
 });

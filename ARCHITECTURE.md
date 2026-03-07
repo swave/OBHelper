@@ -29,7 +29,7 @@ CLI input
 
 | Module | Responsibility | Key Files |
 | --- | --- | --- |
-| CLI | Parse commands/options and invoke pipeline | `src/cli.ts`, `src/cli-fetch-options.ts` |
+| CLI | Parse commands/options, load stored defaults, and invoke pipeline | `src/cli.ts`, `src/cli-fetch-options.ts`, `src/settings.ts` |
 | Core | Types, errors, source routing, pipeline orchestration | `src/core/types.ts`, `src/core/errors.ts`, `src/core/url-source.ts`, `src/core/pipeline.ts` |
 | Fetch | Retrieve page HTML from HTTP/Browser/CDP | `src/fetch/http-fetcher.ts`, `src/fetch/browser-fetcher.ts`, `src/fetch/cdp-fetcher.ts`, `src/fetch/x-ready.ts` |
 | Extract | Convert raw HTML into normalized main content | `src/extract/*.ts` |
@@ -43,6 +43,7 @@ CLI input
 - `http`: direct HTTP requests, optional custom headers/cookies.
 - `browser`: Playwright-driven browser session.
 - `cdp`: attach to existing Chrome session (`--cdp-endpoint`) for real-user context.
+  `--cdp-auto-launch` may bootstrap a dedicated local Chrome debug profile before attach.
 
 ### Selection intent
 - Prefer the smallest reliable mode for a URL.
