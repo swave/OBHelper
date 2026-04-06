@@ -12,7 +12,6 @@ const pipelineInputSchema = z.object({
   url: z.string().url(),
   write: z.object({
     vaultPath: z.string().min(1),
-    subdirectory: z.string().optional(),
     overwrite: z.boolean().optional()
   }),
   fetch: z.object({

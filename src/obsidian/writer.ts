@@ -11,6 +11,9 @@ const MAX_FILE_NAME_LENGTH = 90;
 const MAX_LOCAL_IMAGES = 12;
 const IMAGE_FETCH_TIMEOUT_MS = 8_000;
 const IMAGE_DOWNLOAD_BUDGET_MS = 30_000;
+const RAW_ROOT_DIR_NAME = "raw";
+const RAW_SOURCES_DIR_NAME = "sources";
+const SHARED_ASSETS_DIR_NAME = "assets";
 
 interface DownloadResponseLike {
   ok: boolean;
@@ -212,6 +215,7 @@ export class ObsidianWriter implements DocumentWriter {
   private async downloadLocalImages(input: {
     mediaUrls: string[];
     notePath: string;
+    assetsDirPath: string;
   }): Promise<Array<{ sourceUrl: string; relativePath: string }>> {
     const mediaUrls = [...new Set(input.mediaUrls)].slice(0, MAX_LOCAL_IMAGES);
     if (mediaUrls.length === 0) {
@@ -220,8 +224,6 @@ export class ObsidianWriter implements DocumentWriter {
 
     const noteDir = path.dirname(input.notePath);
     const noteBaseName = path.basename(input.notePath, path.extname(input.notePath));
-    const assetsDirName = `${noteBaseName}_assets`;
-    const assetsDirPath = path.join(noteDir, assetsDirName);
     const downloaded: Array<{ sourceUrl: string; relativePath: string }> = [];
     let savedIndex = 1;
     const imageFetchTimeoutMs = this.timeoutOptions.imageFetchTimeoutMs ?? IMAGE_FETCH_TIMEOUT_MS;
@@ -266,9 +268,9 @@ export class ObsidianWriter implements DocumentWriter {
         continue;
       }
 
-      await mkdir(assetsDirPath, { recursive: true });
-      const fileName = `image-${savedIndex}.${extension}`;
-      const absoluteAssetPath = path.join(assetsDirPath, fileName);
+      await mkdir(input.assetsDirPath, { recursive: true });
+      const fileName = `${noteBaseName}-image-${savedIndex}.${extension}`;
+      const absoluteAssetPath = path.join(input.assetsDirPath, fileName);
       await writeFile(absoluteAssetPath, Buffer.from(bytes));
 
       const relativeAssetPath = path.relative(noteDir, absoluteAssetPath);
@@ -286,9 +288,9 @@ export class ObsidianWriter implements DocumentWriter {
     const safeTitle = sanitizeFileName(document.title);
     const datedName = `${safeTitle}.md`;
 
-    const targetDir = options.subdirectory
-      ? path.join(options.vaultPath, options.subdirectory)
-      : options.vaultPath;
+    const rawRootDir = path.join(options.vaultPath, RAW_ROOT_DIR_NAME);
+    const targetDir = path.join(rawRootDir, RAW_SOURCES_DIR_NAME);
+    const assetsDirPath = path.join(rawRootDir, SHARED_ASSETS_DIR_NAME);
 
     await mkdir(targetDir, { recursive: true });
 
@@ -302,7 +304,8 @@ export class ObsidianWriter implements DocumentWriter {
     const candidateMediaUrls = [...new Set([...(document.mediaUrls ?? []), ...inlineImageUrls])];
     const downloadedImages = await this.downloadLocalImages({
       mediaUrls: candidateMediaUrls,
-      notePath: resolved.filePath
+      notePath: resolved.filePath,
+      assetsDirPath
     });
     const replacementMap = new Map<string, string>();
     for (const entry of downloadedImages) {

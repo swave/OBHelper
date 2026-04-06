@@ -9,7 +9,6 @@ import type { BrowserChannel } from "./core/types.js";
 
 const storedSettingsSchema = z.object({
   vault: z.string().min(1).optional(),
-  subdir: z.string().min(1).optional(),
   sessionProfileDir: z.string().min(1).optional(),
   browserChannel: z.enum(["chrome", "chromium", "msedge"]).optional(),
   cdpEndpoint: z.string().min(1).optional(),
@@ -20,7 +19,6 @@ const storedSettingsSchema = z.object({
 export type StoredSettings = z.infer<typeof storedSettingsSchema>;
 export type StoredSettingKey =
   | "vault"
-  | "subdir"
   | "session-profile-dir"
   | "browser-channel"
   | "cdp-endpoint"
@@ -29,7 +27,6 @@ export type StoredSettingKey =
 
 export const STORED_SETTING_KEYS: StoredSettingKey[] = [
   "vault",
-  "subdir",
   "session-profile-dir",
   "browser-channel",
   "cdp-endpoint",
@@ -83,7 +80,15 @@ function parseNonEmptyString(raw: string, key: StoredSettingKey): string {
 
 function normalizeStoredSettings(input: unknown): StoredSettings {
   try {
-    const parsed = storedSettingsSchema.parse(input);
+    let candidate: unknown = input;
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      const mutable = { ...(candidate as Record<string, unknown>) };
+      // Drop legacy key kept by older versions of the CLI.
+      delete mutable.subdir;
+      candidate = mutable;
+    }
+
+    const parsed = storedSettingsSchema.parse(candidate);
     if (parsed.cdpEndpoint && parsed.sessionProfileDir) {
       throw new ObfronterError(
         "INVALID_SETTINGS",
@@ -127,9 +132,6 @@ function setStoredSettingField(
     case "vault":
       settings.vault = value as string;
       return;
-    case "subdir":
-      settings.subdir = value as string;
-      return;
     case "session-profile-dir":
       settings.sessionProfileDir = value as string;
       return;
@@ -163,8 +165,6 @@ export function getStoredSetting(
   switch (key) {
     case "vault":
       return settings.vault;
-    case "subdir":
-      return settings.subdir;
     case "session-profile-dir":
       return settings.sessionProfileDir;
     case "browser-channel":
@@ -188,7 +188,6 @@ export function parseStoredSettingValue(
 ): string | number | boolean {
   switch (key) {
     case "vault":
-    case "subdir":
     case "session-profile-dir":
     case "cdp-endpoint":
       return parseNonEmptyString(rawValue, key);
@@ -217,9 +216,6 @@ export function unsetStoredSetting(settings: StoredSettings, key: StoredSettingK
   switch (key) {
     case "vault":
       delete nextSettings.vault;
-      break;
-    case "subdir":
-      delete nextSettings.subdir;
       break;
     case "session-profile-dir":
       delete nextSettings.sessionProfileDir;

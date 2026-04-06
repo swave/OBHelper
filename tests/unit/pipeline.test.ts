@@ -77,8 +77,7 @@ describe("runPipeline", () => {
       {
         url: "https://x.com/someone/status/1",
         write: {
-          vaultPath: "/vault",
-          subdirectory: "Inbox"
+          vaultPath: "/vault"
         },
         fetch: {}
       },
@@ -100,8 +99,7 @@ describe("runPipeline", () => {
         {
           url: "https://x.com/someone",
           write: {
-            vaultPath: "/vault",
-            subdirectory: "Inbox"
+            vaultPath: "/vault"
           },
           fetch: {}
         },
@@ -120,8 +118,7 @@ describe("runPipeline", () => {
         {
           url: "https://mp.weixin.qq.com/mp/profile_ext?action=home",
           write: {
-            vaultPath: "/vault",
-            subdirectory: "Inbox"
+            vaultPath: "/vault"
           },
           fetch: {}
         },
@@ -153,8 +150,7 @@ describe("runPipeline", () => {
       {
         url: "https://example.com/post",
         write: {
-          vaultPath: "/vault",
-          subdirectory: "Inbox"
+          vaultPath: "/vault"
         },
         fetch: {
           timeoutMs: 15

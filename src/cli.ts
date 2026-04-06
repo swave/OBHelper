@@ -28,7 +28,6 @@ Usage:
 
 Options:
   --vault <path>                Obsidian vault root path (or set OBSIDIAN_VAULT_PATH)
-  --subdir <name>               Subdirectory inside vault (default: Inbox)
   --browser-mode                Force Playwright-backed browser fetch mode
   --http-mode                   Force plain HTTP fetch mode (disables X default browser mode)
   --session-profile-dir <path>  Browser profile dir for authenticated cookies
@@ -131,7 +130,6 @@ async function runFetchCli(args: string[]): Promise<void> {
     allowPositionals: true,
     options: {
       vault: { type: "string" },
-      subdir: { type: "string" },
       "browser-mode": { type: "boolean" },
       "http-mode": { type: "boolean" },
       "session-profile-dir": { type: "string" },
@@ -205,7 +203,6 @@ async function runFetchCli(args: string[]): Promise<void> {
   const result = await runFetchCommand({
     url,
     vaultPath,
-    subdirectory: parsed.values.subdir ?? storedSettings.subdir ?? "Inbox",
     browserMode: parsed.values["browser-mode"],
     forceHttpMode: parsed.values["http-mode"],
     sessionProfileDir,

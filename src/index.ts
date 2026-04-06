@@ -10,7 +10,6 @@ import type { ExtractorResolver } from "./providers/extractor-registry.js";
 export interface FetchCommandInput {
   url: string;
   vaultPath: string;
-  subdirectory?: string;
   timeoutMs?: number;
   browserMode?: boolean;
   forceHttpMode?: boolean;
@@ -66,7 +65,6 @@ export async function runFetchCommand(
       url: input.url,
       write: {
         vaultPath: input.vaultPath,
-        subdirectory: input.subdirectory,
         overwrite: input.overwrite
       },
       fetch: {

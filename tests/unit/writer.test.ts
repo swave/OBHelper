@@ -13,7 +13,7 @@ describe("sanitizeFileName", () => {
 });
 
 describe("ObsidianWriter", () => {
-  it("writes markdown with frontmatter to vault subdirectory", async () => {
+  it("writes markdown with frontmatter to raw/sources in the vault", async () => {
     const vaultPath = await mkdtemp(path.join(os.tmpdir(), "obhelper-test-"));
     const writer = new ObsidianWriter(async () => ({
       ok: false,
@@ -38,12 +38,12 @@ describe("ObsidianWriter", () => {
         mediaUrls: ["https://example.com/image.jpg"]
       },
       {
-        vaultPath,
-        subdirectory: "Inbox"
+        vaultPath
       }
     );
 
     expect(first.fileName).toBe("My Test Note.md");
+    expect(first.outputPath).toBe(path.join(vaultPath, "raw", "sources", "My Test Note.md"));
 
     const fileContent = await readFile(first.outputPath, "utf8");
     expect(fileContent).toContain("source_platform: generic");
@@ -62,8 +62,7 @@ describe("ObsidianWriter", () => {
         markdownBody: "Second",
       },
       {
-        vaultPath,
-        subdirectory: "Inbox"
+        vaultPath
       }
     );
 
@@ -119,19 +118,18 @@ describe("ObsidianWriter", () => {
         ]
       },
       {
-        vaultPath,
-        subdirectory: "Inbox"
+        vaultPath
       }
     );
 
     const noteContent = await readFile(result.outputPath, "utf8");
     expect(noteContent).toContain("## Images");
-    expect(noteContent).toContain("![Image 1](<Image Note_assets/image-1.jpg>)");
-    expect(noteContent).toContain("![Image 2](<Image Note_assets/image-2.png>)");
+    expect(noteContent).toContain("![Image 1](<../assets/Image Note-image-1.jpg>)");
+    expect(noteContent).toContain("![Image 2](<../assets/Image Note-image-2.png>)");
     expect(noteContent).not.toContain("![Image 3]");
 
-    const image1 = await readFile(path.join(vaultPath, "Inbox", "Image Note_assets", "image-1.jpg"), "utf8");
-    const image2 = await readFile(path.join(vaultPath, "Inbox", "Image Note_assets", "image-2.png"), "utf8");
+    const image1 = await readFile(path.join(vaultPath, "raw", "assets", "Image Note-image-1.jpg"), "utf8");
+    const image2 = await readFile(path.join(vaultPath, "raw", "assets", "Image Note-image-2.png"), "utf8");
     expect(image1).toBe("fake-jpg");
     expect(image2).toBe("fake-png");
   });
@@ -156,17 +154,16 @@ describe("ObsidianWriter", () => {
         markdownBody: "Before image\n\n![inline](https://example.com/inline.jpg)\n\nAfter image"
       },
       {
-        vaultPath,
-        subdirectory: "Inbox"
+        vaultPath
       }
     );
 
     const noteContent = await readFile(result.outputPath, "utf8");
-    expect(noteContent).toContain("![inline](<Inline Image Note_assets/image-1.jpg>)");
+    expect(noteContent).toContain("![inline](<../assets/Inline Image Note-image-1.jpg>)");
     expect(noteContent).not.toContain("https://example.com/inline.jpg");
     expect(noteContent).not.toContain("## Images");
 
-    const image = await readFile(path.join(vaultPath, "Inbox", "Inline Image Note_assets", "image-1.jpg"), "utf8");
+    const image = await readFile(path.join(vaultPath, "raw", "assets", "Inline Image Note-image-1.jpg"), "utf8");
     expect(image).toBe("inline-jpg");
   });
 
@@ -190,18 +187,17 @@ describe("ObsidianWriter", () => {
         markdownBody: "Before\n\n![inline](https://example.com/inline.jpg?format=jpg&amp;name=large)\n\nAfter"
       },
       {
-        vaultPath,
-        subdirectory: "Inbox"
+        vaultPath
       }
     );
 
     const noteContent = await readFile(result.outputPath, "utf8");
-    expect(noteContent).toContain("![inline](<Inline Escaped Image Note_assets/image-1.jpg>)");
+    expect(noteContent).toContain("![inline](<../assets/Inline Escaped Image Note-image-1.jpg>)");
     expect(noteContent).not.toContain("## Images");
     expect(noteContent).not.toContain("amp;");
 
     const image = await readFile(
-      path.join(vaultPath, "Inbox", "Inline Escaped Image Note_assets", "image-1.jpg"),
+      path.join(vaultPath, "raw", "assets", "Inline Escaped Image Note-image-1.jpg"),
       "utf8"
     );
     expect(image).toBe("inline-jpg-escaped");
@@ -238,8 +234,7 @@ describe("ObsidianWriter", () => {
         ]
       },
       {
-        vaultPath,
-        subdirectory: "Inbox"
+        vaultPath
       }
     );
 
@@ -276,12 +271,11 @@ describe("ObsidianWriter", () => {
         mediaUrls: ["https://example.com/slow.png"]
       },
       {
-        vaultPath,
-        subdirectory: "Inbox"
+        vaultPath
       }
     );
     const noteContent = await readFile(result.outputPath, "utf8");
 
-    expect(noteContent).not.toContain("Image Timeout Note_assets");
+    expect(noteContent).not.toContain("../assets/Image Timeout Note-image-1.png");
   });
 });

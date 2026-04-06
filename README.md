@@ -23,7 +23,6 @@ obhelper settings <subcommand>
 ```
 
 Options:
-- `--subdir <name>`: vault subdirectory (default: `Inbox`)
 - `--browser-mode`: force browser-session fetch mode (Playwright)
 - `--http-mode`: force plain HTTP fetch mode (disables X auto browser mode)
 - `--session-profile-dir <path>`: browser profile dir for authenticated cookies
@@ -46,7 +45,6 @@ Persistent local defaults:
 
 Available keys:
 - `vault`
-- `subdir`
 - `session-profile-dir`
 - `browser-channel`
 - `cdp-endpoint`

@@ -63,7 +63,6 @@ export interface NormalizedDocument {
 
 export interface WriteOptions {
   vaultPath: string;
-  subdirectory?: string;
   overwrite?: boolean;
 }
 

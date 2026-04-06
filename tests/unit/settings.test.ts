@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
@@ -65,5 +65,20 @@ describe("settings", () => {
     expect(() =>
       setStoredSetting(settings, "session-profile-dir", "/tmp/profile")
     ).toThrow("Stored settings cannot include both session-profile-dir and cdp-endpoint.");
+  });
+
+  it("ignores legacy subdir key from older settings files", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "obhelper-settings-"));
+    const settingsPath = path.join(tempDir, "settings.json");
+    await writeFile(
+      settingsPath,
+      `${JSON.stringify({ vault: "/tmp/vault", subdir: "Inbox", timeoutMs: 20000 }, null, 2)}\n`,
+      "utf8"
+    );
+
+    await expect(loadStoredSettings({ settingsPath })).resolves.toEqual({
+      vault: "/tmp/vault",
+      timeoutMs: 20_000
+    });
   });
 });
