@@ -32,6 +32,21 @@ Options:
   --timeout-ms <number>         Timeout in milliseconds (fetch default: 20000)
   --overwrite                   Overwrite target file if it exists
   --help                        Show help
+
+AI Agent Usage:
+  Required inputs:
+    - URL (position 1)
+    - vault path (--vault or OBSIDIAN_VAULT_PATH or settings vault)
+    - CDP endpoint (--cdp-endpoint or OBHELPER_CDP_ENDPOINT or settings cdp-endpoint)
+  Recommended invocation:
+    obhelper fetch "<url>" --vault "<vault_path>" --cdp-endpoint "http://127.0.0.1:9222"
+  Success output (parse these lines):
+    source_platform=<platform>
+    title=<title>
+    output_path=<absolute_markdown_path>
+  Error behavior:
+    - non-zero exit code
+    - one-line error on stderr: <ErrorName>: <message>
 `;
 
   process.stdout.write(`${help}\n`);
