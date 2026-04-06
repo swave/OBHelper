@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 
 import { resolveFetchCliOptions } from "./cli-fetch-options.js";
@@ -17,6 +18,10 @@ import {
   unsetStoredSetting
 } from "./settings.js";
 
+const require = createRequire(import.meta.url);
+const packageJson = require("../package.json") as { version?: string };
+const TOOL_VERSION = packageJson.version ?? "0.0.0";
+
 function printHelp(): void {
   const help = `obhelper - URL to Obsidian markdown pipeline
 
@@ -31,6 +36,7 @@ Options:
   --no-cdp-auto-launch          Disable a stored cdp-auto-launch default for this fetch
   --timeout-ms <number>         Timeout in milliseconds (fetch default: 20000)
   --overwrite                   Overwrite target file if it exists
+  --version, -v                 Show version
   --help                        Show help
 
 AI Agent Usage:
@@ -226,6 +232,11 @@ async function main(): Promise<void> {
 
   if (!command || command === "--help" || command === "help") {
     printHelp();
+    return;
+  }
+
+  if (command === "--version" || command === "-v" || command === "version") {
+    process.stdout.write(`${TOOL_VERSION}\n`);
     return;
   }
 
