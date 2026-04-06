@@ -3,34 +3,13 @@ import { describe, expect, it } from "vitest";
 import { resolveFetchCliOptions } from "../../src/cli-fetch-options.js";
 
 describe("resolveFetchCliOptions", () => {
-  it("throws for browser mode + http mode", () => {
+  it("throws when both cdp auto-launch toggles are enabled", () => {
     expect(() =>
       resolveFetchCliOptions({
-        browserMode: true,
-        httpMode: true
+        cdpAutoLaunchEnabled: true,
+        cdpAutoLaunchDisabled: true
       })
-    ).toThrow("Choose only one of --browser-mode or --http-mode.");
-  });
-
-  it("throws for http mode + explicit cdp endpoint flag", () => {
-    expect(() =>
-      resolveFetchCliOptions({
-        httpMode: true,
-        cdpEndpointFlag: "http://127.0.0.1:9222"
-      })
-    ).toThrow("Choose only one of --http-mode or --cdp-endpoint.");
-  });
-
-  it("ignores env cdp endpoint when http mode is enabled", () => {
-    expect(
-      resolveFetchCliOptions({
-        httpMode: true,
-        cdpEndpointEnv: "http://127.0.0.1:9222"
-      })
-    ).toEqual({
-      cdpEndpoint: undefined,
-      cdpAutoLaunch: false
-    });
+    ).toThrow("Choose only one of --cdp-auto-launch or --no-cdp-auto-launch.");
   });
 
   it("prefers explicit cdp endpoint flag over env endpoint", () => {
@@ -43,24 +22,6 @@ describe("resolveFetchCliOptions", () => {
       cdpEndpoint: "http://127.0.0.1:9333",
       cdpAutoLaunch: false
     });
-  });
-
-  it("throws when cdp endpoint and session profile dir are both provided", () => {
-    expect(() =>
-      resolveFetchCliOptions({
-        cdpEndpointFlag: "http://127.0.0.1:9222",
-        sessionProfileDir: "/tmp/profile"
-      })
-    ).toThrow("Choose one browser session source: --session-profile-dir or --cdp-endpoint.");
-  });
-
-  it("throws for http mode + cdp auto launch", () => {
-    expect(() =>
-      resolveFetchCliOptions({
-        httpMode: true,
-        cdpAutoLaunchEnabled: true
-      })
-    ).toThrow("Choose only one of --http-mode or --cdp-auto-launch.");
   });
 
   it("throws when cdp auto launch is enabled without a cdp endpoint", () => {

@@ -144,8 +144,6 @@ async function runFetchCase(input) {
     input.url,
     "--vault",
     input.vaultPath,
-    "--subdir",
-    input.subdir,
     "--cdp-endpoint",
     input.cdpEndpoint,
     "--timeout-ms",
@@ -209,7 +207,6 @@ async function main() {
 
   const textResult = await runFetchCase({
     url: textUrl,
-    subdir: "E2E-X-Text",
     cdpEndpoint,
     cdpAutoLaunch,
     timeoutMs,
@@ -220,7 +217,6 @@ async function main() {
   if (linkOnlyUrl) {
     const linkResult = await runFetchCase({
       url: linkOnlyUrl,
-      subdir: "E2E-X-LinkOnly",
       cdpEndpoint,
       cdpAutoLaunch,
       timeoutMs,

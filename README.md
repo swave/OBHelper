@@ -10,10 +10,12 @@ Agent-first CLI scaffold for ingesting URL content (X / Weixin / Weibo / generic
 ```bash
 npm install --no-audit --no-fund
 npm run build
-node dist/cli.js fetch "https://example.com/post" --vault "/path/to/ObsidianVault"
+node dist/cli.js fetch "https://example.com/post" \
+  --vault "/path/to/ObsidianVault" \
+  --cdp-endpoint "http://127.0.0.1:9222"
 ```
 
-`npm install` now auto-installs Playwright Chromium for local environments so browser fetch mode works out of the box.
+`npm install` now auto-installs Playwright Chromium for local environments so CDP fetch mode dependencies are present out of the box.
 To skip this (for CI or constrained environments), set `OBHELPER_SKIP_PLAYWRIGHT_INSTALL=1`.
 
 ## CLI Usage
@@ -23,18 +25,11 @@ obhelper settings <subcommand>
 ```
 
 Options:
-- `--browser-mode`: force browser-session fetch mode (Playwright)
-- `--http-mode`: force plain HTTP fetch mode (disables X auto browser mode)
-- `--session-profile-dir <path>`: browser profile dir for authenticated cookies
-- `--browser-channel <name>`: browser channel for fetch browser mode (`chrome`, `chromium`, `msedge`)
-- `--cdp-endpoint <url>`: attach fetch to a running Chrome DevTools endpoint (or set `OBHELPER_CDP_ENDPOINT`)
+- `--cdp-endpoint <url>`: connect fetch to a running Chrome DevTools endpoint (or set `OBHELPER_CDP_ENDPOINT`)
 - `--cdp-auto-launch`: if a local CDP endpoint is unavailable, open a dedicated Chrome debug profile and retry
 - `--no-cdp-auto-launch`: disable a stored `cdp-auto-launch` default for a single fetch
-- `--cookie-file <path>`: cookie file for fetch (`raw cookie header` or `Netscape cookie file`)
-- `--cookie-env <name>`: env var name that contains cookie header for fetch
 - `--timeout-ms <number>`: fetch timeout
 - `--overwrite`: overwrite existing target file
-- `--header <k:v>`: repeatable custom HTTP header
 
 Persistent local defaults:
 - `obhelper settings list`
@@ -45,8 +40,6 @@ Persistent local defaults:
 
 Available keys:
 - `vault`
-- `session-profile-dir`
-- `browser-channel`
 - `cdp-endpoint`
 - `cdp-auto-launch`
 - `timeout-ms`
@@ -60,15 +53,6 @@ obhelper settings set cdp-endpoint "http://127.0.0.1:9222"
 obhelper settings set cdp-auto-launch true
 
 obhelper fetch "https://x.com/<user>/status/<id>"
-```
-
-HTTP mode with cookies from env var:
-```bash
-export X_COOKIE='auth_token=...; ct0=...'
-obhelper fetch "https://x.com/<user>/status/<id>" \
-  --vault "/path/to/Vault" \
-  --http-mode \
-  --cookie-env X_COOKIE
 ```
 
 CDP mode (use your own Chrome session):
@@ -98,7 +82,7 @@ Directory map:
 ```text
 src/
   core/        # pipeline orchestration, types, errors, source routing
-  fetch/       # http and browser fetchers
+  fetch/       # CDP fetcher plus legacy fetch implementations
   extract/     # generic + platform fallback extractors
   markdown/    # HTML -> Markdown + frontmatter rendering
   obsidian/    # safe file naming and writing logic
@@ -129,12 +113,12 @@ Optional link-only case:
 - `X_E2E_TIMEOUT_MS`: fetch timeout in milliseconds (default: `90000`)
 
 ## Notes on Access Restrictions
-Some pages require login, anti-bot checks, or dynamic rendering. The scaffold includes browser-session mode as a compliant extension point; no CAPTCHA bypass logic is included.
+Some pages require login, anti-bot checks, or dynamic rendering. The scaffold uses CDP mode as a compliant extension point; no CAPTCHA bypass logic is included.
 
 ## X Provider (v1)
 - Supports only X status URLs (`https://x.com/<handle>/status/<id>` or `/i/web/status/<id>`).
-- Defaults to browser mode for X and uses `chrome` browser channel by default.
-- If direct HTML extraction is blocked, it attempts a public oEmbed fallback before writing a blocked note.
+- Fetch runs in CDP mode and requires a CDP endpoint.
+- If extraction is blocked, it attempts a public oEmbed fallback before writing a blocked note.
 - You can attach fetch to a manually opened Chrome instance with `--cdp-endpoint`.
 - You can add `--cdp-auto-launch` to auto-open a dedicated local Chrome debug profile when the local CDP endpoint is down.
 - For link-only posts (for example `t.co` only), it adds expanded destination links when resolvable.

@@ -5,12 +5,9 @@ import path from "node:path";
 import { z } from "zod";
 
 import { ObfronterError } from "./core/errors.js";
-import type { BrowserChannel } from "./core/types.js";
 
 const storedSettingsSchema = z.object({
   vault: z.string().min(1).optional(),
-  sessionProfileDir: z.string().min(1).optional(),
-  browserChannel: z.enum(["chrome", "chromium", "msedge"]).optional(),
   cdpEndpoint: z.string().min(1).optional(),
   cdpAutoLaunch: z.boolean().optional(),
   timeoutMs: z.number().int().positive().optional()
@@ -19,33 +16,18 @@ const storedSettingsSchema = z.object({
 export type StoredSettings = z.infer<typeof storedSettingsSchema>;
 export type StoredSettingKey =
   | "vault"
-  | "session-profile-dir"
-  | "browser-channel"
   | "cdp-endpoint"
   | "cdp-auto-launch"
   | "timeout-ms";
 
 export const STORED_SETTING_KEYS: StoredSettingKey[] = [
   "vault",
-  "session-profile-dir",
-  "browser-channel",
   "cdp-endpoint",
   "cdp-auto-launch",
   "timeout-ms"
 ];
 
 const DEFAULT_SETTINGS_PATH = path.join(os.homedir(), ".obhelper", "settings.json");
-
-function parseBrowserChannel(raw: string): BrowserChannel {
-  if (raw === "chrome" || raw === "chromium" || raw === "msedge") {
-    return raw;
-  }
-
-  throw new ObfronterError(
-    "INVALID_SETTINGS_VALUE",
-    "browser-channel must be one of: chrome, chromium, msedge."
-  );
-}
 
 function parsePositiveNumber(raw: string, key: StoredSettingKey): number {
   const parsedNumber = Number(raw);
@@ -83,19 +65,14 @@ function normalizeStoredSettings(input: unknown): StoredSettings {
     let candidate: unknown = input;
     if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
       const mutable = { ...(candidate as Record<string, unknown>) };
-      // Drop legacy key kept by older versions of the CLI.
+      // Drop legacy keys kept by older versions of the CLI.
       delete mutable.subdir;
+      delete mutable.sessionProfileDir;
+      delete mutable.browserChannel;
       candidate = mutable;
     }
 
     const parsed = storedSettingsSchema.parse(candidate);
-    if (parsed.cdpEndpoint && parsed.sessionProfileDir) {
-      throw new ObfronterError(
-        "INVALID_SETTINGS",
-        "Stored settings cannot include both session-profile-dir and cdp-endpoint."
-      );
-    }
-
     return parsed;
   } catch (error) {
     if (error instanceof ObfronterError) {
@@ -132,12 +109,6 @@ function setStoredSettingField(
     case "vault":
       settings.vault = value as string;
       return;
-    case "session-profile-dir":
-      settings.sessionProfileDir = value as string;
-      return;
-    case "browser-channel":
-      settings.browserChannel = value as BrowserChannel;
-      return;
     case "cdp-endpoint":
       settings.cdpEndpoint = value as string;
       return;
@@ -165,10 +136,6 @@ export function getStoredSetting(
   switch (key) {
     case "vault":
       return settings.vault;
-    case "session-profile-dir":
-      return settings.sessionProfileDir;
-    case "browser-channel":
-      return settings.browserChannel;
     case "cdp-endpoint":
       return settings.cdpEndpoint;
     case "cdp-auto-launch":
@@ -188,11 +155,8 @@ export function parseStoredSettingValue(
 ): string | number | boolean {
   switch (key) {
     case "vault":
-    case "session-profile-dir":
     case "cdp-endpoint":
       return parseNonEmptyString(rawValue, key);
-    case "browser-channel":
-      return parseBrowserChannel(parseNonEmptyString(rawValue, key));
     case "cdp-auto-launch":
       return parseBooleanValue(rawValue, key);
     case "timeout-ms":
@@ -216,12 +180,6 @@ export function unsetStoredSetting(settings: StoredSettings, key: StoredSettingK
   switch (key) {
     case "vault":
       delete nextSettings.vault;
-      break;
-    case "session-profile-dir":
-      delete nextSettings.sessionProfileDir;
-      break;
-    case "browser-channel":
-      delete nextSettings.browserChannel;
       break;
     case "cdp-endpoint":
       delete nextSettings.cdpEndpoint;

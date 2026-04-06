@@ -59,20 +59,18 @@ describe("settings", () => {
     expect(withoutTimeout.timeoutMs).toBeUndefined();
   });
 
-  it("rejects conflicting stored browser session sources", () => {
-    const settings = setStoredSetting({}, "cdp-endpoint", "http://127.0.0.1:9222");
-
-    expect(() =>
-      setStoredSetting(settings, "session-profile-dir", "/tmp/profile")
-    ).toThrow("Stored settings cannot include both session-profile-dir and cdp-endpoint.");
-  });
-
-  it("ignores legacy subdir key from older settings files", async () => {
+  it("ignores legacy removed keys from older settings files", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "obhelper-settings-"));
     const settingsPath = path.join(tempDir, "settings.json");
     await writeFile(
       settingsPath,
-      `${JSON.stringify({ vault: "/tmp/vault", subdir: "Inbox", timeoutMs: 20000 }, null, 2)}\n`,
+      `${JSON.stringify({
+        vault: "/tmp/vault",
+        subdir: "Inbox",
+        sessionProfileDir: "/tmp/profile",
+        browserChannel: "chrome",
+        timeoutMs: 20000
+      }, null, 2)}\n`,
       "utf8"
     );
 

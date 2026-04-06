@@ -45,18 +45,18 @@ class FakeWriter implements DocumentWriter {
 }
 
 describe("runFetchCommand", () => {
-  it("requires session profile for x provider default browser mode", async () => {
+  it("requires cdp endpoint", async () => {
     await expect(() =>
       runFetchCommand({
         url: "https://x.com/test/status/123",
         vaultPath: "/tmp/vault"
       })
     ).rejects.toThrow(
-      "X provider defaults to browser mode. Provide --session-profile-dir, use --cdp-endpoint, or use --http-mode"
+      "Missing CDP endpoint. Use --cdp-endpoint, OBHELPER_CDP_ENDPOINT"
     );
   });
 
-  it("uses cdp fetch mode without requiring session profile dir", async () => {
+  it("uses cdp fetch mode", async () => {
     const fakeFetcher = new FakeFetcher();
     const createDependencies = vi.fn(() => ({
       fetcher: fakeFetcher,
@@ -75,7 +75,7 @@ describe("runFetchCommand", () => {
       }
     );
 
-    expect(createDependencies).toHaveBeenCalledWith({ fetchMode: "cdp" });
+    expect(createDependencies).toHaveBeenCalledWith();
     expect(fakeFetcher.fetch).toHaveBeenCalledWith(
       expect.objectContaining({
         cdpEndpoint: "http://127.0.0.1:9222"

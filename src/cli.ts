@@ -3,9 +3,7 @@
 import { parseArgs } from "node:util";
 
 import { resolveFetchCliOptions } from "./cli-fetch-options.js";
-import { resolveCookieHeader } from "./core/cookie-header.js";
 import { asError, ObfronterError } from "./core/errors.js";
-import type { BrowserChannel } from "./core/types.js";
 import { runFetchCommand } from "./index.js";
 import {
   formatStoredSettingValue,
@@ -28,18 +26,11 @@ Usage:
 
 Options:
   --vault <path>                Obsidian vault root path (or set OBSIDIAN_VAULT_PATH)
-  --browser-mode                Force Playwright-backed browser fetch mode
-  --http-mode                   Force plain HTTP fetch mode (disables X default browser mode)
-  --session-profile-dir <path>  Browser profile dir for authenticated cookies
-  --browser-channel <name>      Browser channel for fetch browser mode (chrome|chromium|msedge)
-  --cdp-endpoint <url>          Chrome DevTools endpoint for attaching to a running browser (or set OBHELPER_CDP_ENDPOINT)
+  --cdp-endpoint <url>          Chrome DevTools endpoint for connecting to a running browser (or set OBHELPER_CDP_ENDPOINT)
   --cdp-auto-launch             If local CDP is unavailable, open dedicated Chrome with remote debugging enabled
   --no-cdp-auto-launch          Disable a stored cdp-auto-launch default for this fetch
-  --cookie-file <path>          Cookie file path (raw header or Netscape format) for fetch requests
-  --cookie-env <name>           Env var name containing cookie header for fetch requests
   --timeout-ms <number>         Timeout in milliseconds (fetch default: 20000)
   --overwrite                   Overwrite target file if it exists
-  --header <k:v>                Optional request header (repeatable)
   --help                        Show help
 `;
 
@@ -63,28 +54,6 @@ Available keys:
   process.stdout.write(`${help}\n`);
 }
 
-function parseHeaders(input: string[] | undefined): Record<string, string> | undefined {
-  if (!input || input.length === 0) {
-    return undefined;
-  }
-
-  const headers: Record<string, string> = {};
-  for (const pair of input) {
-    const separatorIndex = pair.indexOf(":");
-    if (separatorIndex <= 0) {
-      continue;
-    }
-
-    const key = pair.slice(0, separatorIndex).trim();
-    const value = pair.slice(separatorIndex + 1).trim();
-    if (key.length > 0) {
-      headers[key] = value;
-    }
-  }
-
-  return Object.keys(headers).length > 0 ? headers : undefined;
-}
-
 function parsePositiveNumber(raw: string | undefined, errorMessage: string): number | undefined {
   if (!raw) {
     return undefined;
@@ -97,22 +66,6 @@ function parsePositiveNumber(raw: string | undefined, errorMessage: string): num
 
   return parsedNumber;
 }
-
-function parseBrowserChannel(raw: string | undefined): BrowserChannel | undefined {
-  if (!raw) {
-    return undefined;
-  }
-
-  if (raw === "chrome" || raw === "chromium" || raw === "msedge") {
-    return raw;
-  }
-
-  throw new ObfronterError(
-    "INVALID_BROWSER_CHANNEL",
-    "--browser-channel must be one of: chrome, chromium, msedge."
-  );
-}
-
 function requireStoredSettingKey(raw: string | undefined) {
   if (!raw || !isStoredSettingKey(raw)) {
     throw new ObfronterError(
@@ -130,18 +83,11 @@ async function runFetchCli(args: string[]): Promise<void> {
     allowPositionals: true,
     options: {
       vault: { type: "string" },
-      "browser-mode": { type: "boolean" },
-      "http-mode": { type: "boolean" },
-      "session-profile-dir": { type: "string" },
-      "browser-channel": { type: "string" },
       "cdp-endpoint": { type: "string" },
       "cdp-auto-launch": { type: "boolean" },
       "no-cdp-auto-launch": { type: "boolean" },
-      "cookie-file": { type: "string" },
-      "cookie-env": { type: "string" },
       "timeout-ms": { type: "string" },
       overwrite: { type: "boolean" },
-      header: { type: "string", multiple: true },
       help: { type: "boolean" }
     }
   });
@@ -152,16 +98,12 @@ async function runFetchCli(args: string[]): Promise<void> {
   }
 
   const storedSettings = await loadStoredSettings();
-  const sessionProfileDir = parsed.values["session-profile-dir"] ?? storedSettings.sessionProfileDir;
   const { cdpEndpoint, cdpAutoLaunch } = resolveFetchCliOptions({
-    browserMode: parsed.values["browser-mode"],
-    httpMode: parsed.values["http-mode"],
     cdpEndpointFlag: parsed.values["cdp-endpoint"],
-    cdpEndpointEnv: process.env.OBHELPER_CDP_ENDPOINT ?? process.env.OBFRONTER_CDP_ENDPOINT ?? storedSettings.cdpEndpoint,
+    cdpEndpointEnv: process.env.OBHELPER_CDP_ENDPOINT ?? storedSettings.cdpEndpoint,
     cdpAutoLaunchEnabled: parsed.values["cdp-auto-launch"],
     cdpAutoLaunchDisabled: parsed.values["no-cdp-auto-launch"],
-    cdpAutoLaunchDefault: storedSettings.cdpAutoLaunch,
-    sessionProfileDir
+    cdpAutoLaunchDefault: storedSettings.cdpAutoLaunch
   });
 
   const url = parsed.positionals[0];
@@ -181,37 +123,14 @@ async function runFetchCli(args: string[]): Promise<void> {
     parsed.values["timeout-ms"] ?? (storedSettings.timeoutMs !== undefined ? String(storedSettings.timeoutMs) : undefined),
     "--timeout-ms must be a positive number."
   );
-  const browserChannel = parseBrowserChannel(parsed.values["browser-channel"] ?? storedSettings.browserChannel);
-  const headers = parseHeaders(parsed.values.header) ?? {};
-  const existingCookieHeaderKey = Object.keys(headers).find((key) => key.toLowerCase() === "cookie");
-  if (existingCookieHeaderKey && (parsed.values["cookie-file"] || parsed.values["cookie-env"])) {
-    throw new ObfronterError(
-      "COOKIE_SOURCE_CONFLICT",
-      "Use either --header cookie:... or --cookie-file/--cookie-env, not both."
-    );
-  }
-
-  const cookieHeader = await resolveCookieHeader({
-    cookieFile: parsed.values["cookie-file"],
-    cookieEnvName: parsed.values["cookie-env"]
-  });
-  if (cookieHeader) {
-    headers.cookie = cookieHeader;
-  }
-  const finalHeaders = Object.keys(headers).length > 0 ? headers : undefined;
 
   const result = await runFetchCommand({
     url,
     vaultPath,
-    browserMode: parsed.values["browser-mode"],
-    forceHttpMode: parsed.values["http-mode"],
-    sessionProfileDir,
-    browserChannel,
     cdpEndpoint,
     cdpAutoLaunch,
     timeoutMs,
-    overwrite: Boolean(parsed.values.overwrite),
-    headers: finalHeaders
+    overwrite: Boolean(parsed.values.overwrite)
   });
 
   process.stdout.write(
