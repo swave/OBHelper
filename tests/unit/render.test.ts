@@ -176,4 +176,51 @@ describe("toNormalizedDocument", () => {
     expect(normalized.markdownBody).not.toContain("Copy");
     expect(normalized.markdownBody).toContain("```\nmkdir agent\ncd agent\nbun init -y\n```");
   });
+
+  it("renders ordered step lists with nested code blocks without dropping step content", () => {
+    const normalized = toNormalizedDocument({
+      sourceUrl: "https://example.com/steps",
+      sourcePlatform: "generic",
+      fetchedAt: "2026-04-09T12:00:00.000Z",
+      extracted: {
+        title: "Step Test",
+        contentHtml: [
+          "<ol>",
+          "<li>",
+          "<p><strong>Explore</strong></p>",
+          "<p>Enter Plan Mode. Claude reads files and answers questions without making changes.</p>",
+          "<pre><code>read /src/auth</code></pre>",
+          "</li>",
+          "<li>",
+          "<p><strong>Plan</strong></p>",
+          "<p>Ask Claude to create a detailed implementation plan.</p>",
+          "</li>",
+          "</ol>"
+        ].join(""),
+        extractionStatus: "ok"
+      }
+    });
+
+    expect(normalized.markdownBody).toContain("1.  **Explore**");
+    expect(normalized.markdownBody).toContain("Enter Plan Mode. Claude reads files and answers questions without making changes.");
+    expect(normalized.markdownBody).toMatch(/```\n\s+read \/src\/auth\n\s+```/);
+    expect(normalized.markdownBody).toContain("2.  **Plan**");
+    expect(normalized.markdownBody).toContain("Ask Claude to create a detailed implementation plan.");
+  });
+
+  it("renders blockquote callouts without dropping inline code content", () => {
+    const normalized = toNormalizedDocument({
+      sourceUrl: "https://example.com/callout",
+      sourcePlatform: "generic",
+      fetchedAt: "2026-04-09T12:00:00.000Z",
+      extracted: {
+        title: "Callout Test",
+        contentHtml:
+          "<blockquote>Create <code>SKILL.md</code> files in <code>.claude/skills/</code> to give Claude domain knowledge and reusable workflows.</blockquote>",
+        extractionStatus: "ok"
+      }
+    });
+
+    expect(normalized.markdownBody).toContain("> Create `SKILL.md` files in `.claude/skills/` to give Claude domain knowledge and reusable workflows.");
+  });
 });

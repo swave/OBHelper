@@ -2,8 +2,13 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
+import { JSDOM } from "jsdom";
 
-import { GenericExtractor } from "../../src/extract/generic-extractor.js";
+import {
+  GenericExtractor,
+  normalizeCustomCallouts,
+  normalizeCustomStepLists
+} from "../../src/extract/generic-extractor.js";
 
 describe("GenericExtractor", () => {
   it("extracts title and content from deterministic fixture html", async () => {
@@ -145,5 +150,66 @@ describe("GenericExtractor", () => {
     expect(codeIndex).toBeGreaterThan(beforeIndex);
     expect(afterIndex).toBeGreaterThan(codeIndex);
     expect(result.contentHtml).not.toContain("Recovered Code Blocks");
+  });
+
+  it("normalizes Mintlify step widgets into semantic ordered lists", () => {
+    const dom = new JSDOM([
+      "<body>",
+      "<div role=\"list\" class=\"steps\">",
+      "<div role=\"listitem\" class=\"step\">",
+      "<div data-component-part=\"step-number\" contenteditable=\"false\"><div><div>1</div></div></div>",
+      "<div class=\"w-full overflow-hidden pl-8 pr-px\">",
+      "<p data-component-part=\"step-title\" contenteditable=\"false\">Explore</p>",
+      "<div data-component-part=\"step-content\">",
+      "<span data-as=\"p\">Enter Plan Mode. Claude reads files and answers questions without making changes.</span>",
+      "<pre><code>read /src/auth</code></pre>",
+      "</div>",
+      "</div>",
+      "</div>",
+      "<div role=\"listitem\" class=\"step\">",
+      "<div data-component-part=\"step-number\" contenteditable=\"false\"><div><div>2</div></div></div>",
+      "<div class=\"w-full overflow-hidden pl-8 pr-px\">",
+      "<p data-component-part=\"step-title\" contenteditable=\"false\">Plan</p>",
+      "<div data-component-part=\"step-content\">",
+      "<span data-as=\"p\">Ask Claude to create a detailed implementation plan.</span>",
+      "</div>",
+      "</div>",
+      "</div>",
+      "</div>",
+      "</body>"
+    ].join(""));
+
+    normalizeCustomStepLists(dom.window.document);
+
+    const normalized = dom.window.document.body.innerHTML;
+    expect(normalized).toContain("<ol>");
+    expect(normalized).toContain("<li><p><strong>Explore</strong></p>");
+    expect(normalized).toContain("Enter Plan Mode. Claude reads files and answers questions without making changes.");
+    expect(normalized).toContain("<pre><code>read /src/auth</code></pre>");
+    expect(normalized).toContain("<li><p><strong>Plan</strong></p>");
+    expect(normalized).not.toContain("data-component-part=\"step-number\"");
+    expect(normalized).not.toContain("data-component-part=\"step-title\"");
+    expect(normalized).not.toContain("data-component-part=\"step-content\"");
+  });
+
+  it("normalizes Mintlify callouts into readable blockquotes", () => {
+    const dom = new JSDOM([
+      "<body>",
+      "<div data-callout-type=\"tip\">",
+      "<div data-component-part=\"callout-icon\">tip</div>",
+      "<div data-component-part=\"callout-content\">",
+      "<span data-as=\"p\">Create <code>SKILL.md</code> files in <code>.claude/skills/</code> to give Claude domain knowledge and reusable workflows.</span>",
+      "</div>",
+      "</div>",
+      "</body>"
+    ].join(""));
+
+    normalizeCustomCallouts(dom.window.document);
+
+    const normalized = dom.window.document.body.innerHTML;
+    expect(normalized).toContain("<blockquote>");
+    expect(normalized).toContain("Create <code>SKILL.md</code> files in <code>.claude/skills/</code> to give Claude domain knowledge and reusable workflows.");
+    expect(normalized).not.toContain("data-callout-type=");
+    expect(normalized).not.toContain("data-component-part=\"callout-content\"");
   });
 });

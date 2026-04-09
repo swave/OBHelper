@@ -13,6 +13,11 @@ function stripNonContentBlocks(html: string): string {
     .replace(/<template\b[^>]*>[\s\S]*?<\/template>/gi, "");
 }
 
+type CustomStepListItem = {
+  title: Element | null;
+  content: Element | null;
+};
+
 const GITHUB_BLOG_TRIM_MARKERS = new Set([
   "related posts",
   "explore more from github",
@@ -55,6 +60,81 @@ function trimGithubBlogTrailingNoise(contentHtml: string): string {
 
   const trimmed = body.innerHTML.trim();
   return trimmed.length > 0 ? trimmed : contentHtml;
+}
+
+function toCustomStepListItem(item: Element): CustomStepListItem | undefined {
+  const title = item.querySelector("[data-component-part='step-title']");
+  const content = item.querySelector("[data-component-part='step-content']");
+  if (!title && !content) {
+    return undefined;
+  }
+
+  return { title, content };
+}
+
+export function normalizeCustomStepLists(document: Document): void {
+  const roleLists = Array.from(document.querySelectorAll("[role='list']"));
+  for (const roleList of roleLists) {
+    const listItems = Array.from(roleList.children).filter(
+      (child): child is Element => child.getAttribute("role") === "listitem"
+    );
+    if (listItems.length === 0) {
+      continue;
+    }
+
+    const normalizedItems = listItems
+      .map((item) => toCustomStepListItem(item))
+      .filter((item): item is CustomStepListItem => Boolean(item));
+    if (normalizedItems.length === 0 || normalizedItems.length !== listItems.length) {
+      continue;
+    }
+
+    const orderedList = document.createElement("ol");
+    for (const item of normalizedItems) {
+      const listItem = document.createElement("li");
+
+      const titleText = item.title?.textContent?.trim();
+      if (titleText) {
+        const titleParagraph = document.createElement("p");
+        const strong = document.createElement("strong");
+        strong.textContent = titleText;
+        titleParagraph.append(strong);
+        listItem.append(titleParagraph);
+      }
+
+      if (item.content) {
+        for (const child of Array.from(item.content.childNodes)) {
+          listItem.append(child.cloneNode(true));
+        }
+      }
+
+      if (listItem.childNodes.length > 0) {
+        orderedList.append(listItem);
+      }
+    }
+
+    if (orderedList.childNodes.length > 0) {
+      roleList.replaceWith(orderedList);
+    }
+  }
+}
+
+export function normalizeCustomCallouts(document: Document): void {
+  const callouts = Array.from(document.querySelectorAll("[data-callout-type]"));
+  for (const callout of callouts) {
+    const content = callout.querySelector("[data-component-part='callout-content']");
+    const text = content?.textContent?.trim();
+    if (!content || !text) {
+      continue;
+    }
+
+    const blockquote = document.createElement("blockquote");
+    for (const child of Array.from(content.childNodes)) {
+      blockquote.append(child.cloneNode(true));
+    }
+
+    callout.replaceWith(blockquote);
+  }
 }
 
 function normalizeCodeIdentity(raw: string): string {
@@ -177,6 +257,8 @@ export class GenericExtractor implements ContentExtractor {
 
   public async extract(input: FetchResult): Promise<ExtractedMainContent> {
     const dom = new JSDOM(stripNonContentBlocks(input.html), { url: input.finalUrl });
+    normalizeCustomCallouts(dom.window.document);
+    normalizeCustomStepLists(dom.window.document);
     const article = new Readability(dom.window.document).parse();
 
     if (!article?.content || !article?.title) {

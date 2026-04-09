@@ -1,6 +1,6 @@
 {
   "name": "obhelper",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Agent-first CLI scaffold for extracting web content into Obsidian markdown files",
   "type": "module",
